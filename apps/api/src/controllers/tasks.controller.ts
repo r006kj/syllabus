@@ -76,3 +76,22 @@ export const getOverloadedWeeks = async (req: Request, res: Response) => {
 
   return res.json(overloaded)
 }
+export const updateTask = async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { status, complexity, estimated_hours } = req.body
+
+  const updates: any = {}
+  if (status !== undefined) updates.status = status
+  if (complexity !== undefined) updates.complexity = complexity
+  if (estimated_hours !== undefined) updates.estimated_hours = estimated_hours
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) return res.status(400).json({ error: error.message })
+  return res.json(data)
+}

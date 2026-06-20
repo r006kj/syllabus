@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ThemeContext } from './theme-context'
 
 export type ThemeContextType = {
@@ -6,31 +6,23 @@ export type ThemeContextType = {
   toggleTheme: () => void
 }
 
-export const ThemeProvider = ({
-  children
-}: {
-  children: React.ReactNode
-}) => {
+export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [darkMode, setDarkMode] = useState(
     localStorage.getItem('theme') === 'dark'
   )
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode)
+  }, [darkMode])
+
   const toggleTheme = () => {
     const next = !darkMode
     setDarkMode(next)
-
-    document.documentElement.classList.toggle('dark', next)
-
     localStorage.setItem('theme', next ? 'dark' : 'light')
   }
 
   return (
-    <ThemeContext.Provider
-      value={{
-        darkMode,
-        toggleTheme
-      }}
-    >
+    <ThemeContext.Provider value={{ darkMode, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   )

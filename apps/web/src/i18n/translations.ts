@@ -14,7 +14,25 @@ export const translations = {
     signIn: 'Ingresar',
     signingIn: 'Ingresando...',
     noAccount: '¿No tienes cuenta?',
-    or: 'o'
+    or: 'o',
+     todaySummary: 'Resumen académico',
+  today: 'Hoy',
+  overloadedWeek: 'Semana sobrecargada',
+  noOverload: 'No tienes semanas sobrecargadas por ahora.',
+  upcomingTasks: 'Próximas entregas',
+  noUpcoming: 'No tienes tareas próximas.',
+  courses: 'Cursos',
+  gradedTasks: 'tareas calificadas',
+  settings: 'Configuración',
+  profile: 'Perfil',
+  appearance: 'Apariencia',
+  darkMode: 'Modo oscuro',
+  notifications: 'Notificaciones',
+  integrations: 'Integraciones',
+  canvasConnection: 'Conexión Canvas',
+  account: 'Cuenta',
+  logout: 'Cerrar sesión',
+  comingSoon: 'Próximamente'
   },
 
   en: {
@@ -32,6 +50,24 @@ export const translations = {
     signIn: 'Sign in',
     signingIn: 'Signing in...',
     noAccount: "Don't have an account?",
-    or: 'or'
+    or: 'or',
+      todaySummary: 'Academic overview',
+  today: 'Today',
+  overloadedWeek: 'Overloaded week',
+  noOverload: "You don't have overloaded weeks right now.",
+  upcomingTasks: 'Upcoming deadlines',
+  noUpcoming: 'No upcoming tasks.',
+  courses: 'Courses',
+  gradedTasks: 'graded tasks',
+  settings: 'Settings',
+  profile: 'Profile',
+  appearance: 'Appearance',
+  darkMode: 'Dark mode',
+  notifications: 'Notifications',
+  integrations: 'Integrations',
+  canvasConnection: 'Canvas connection',
+  account: 'Account',
+  logout: 'Log out',
+  comingSoon: 'Coming soon'
   }
 }

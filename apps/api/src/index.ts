@@ -17,6 +17,8 @@ import plannerRoutes from './routes/planner.routes'
 import notionRoutes from './routes/notion.routes'
 import integrationsRoutes from './routes/integrations.routes'
 import { startGoogleCalendarJob } from './jobs/googleCalendar.job'
+import profileRoutes from './routes/profile.routes'
+import summaryRoutes from './routes/summary.routes'
 startGoogleCalendarJob()
 startNotificationsJob()
 
@@ -29,6 +31,8 @@ app.use(express.json())
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' })
 })
+app.use('/summaries', summaryRoutes)
+app.use('/profile', profileRoutes)
 app.use('/integrations', integrationsRoutes)
 app.use('/integrations/notion', notionRoutes)
 app.use('/planner', plannerRoutes)

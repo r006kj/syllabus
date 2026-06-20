@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { ThemeToggle } from '../components/ThemeToggle'
-import { LanguageSelector } from '../components/LanguageSelector'
 import { useLanguage } from '../hooks/useLanguage'
 import { translations } from '../i18n/translations'
+import {useTheme} from "../hooks/useTheme";
+import logoLight from '../assets/logoL.svg'
+import logoDark from '../assets/logoD.svg'
+
 
 export const Register = () => {
+  const { darkMode } = useTheme()
   const { language } = useLanguage()
   const t = translations[language]
 
@@ -33,13 +36,19 @@ export const Register = () => {
 
       {/* Botón modo oscuro */}
       <div className="absolute top-6 right-6">
-        <ThemeToggle />
       </div>
 
       <form
         onSubmit={handleSubmit}
         className="bg-white dark:bg-neutral-900 p-8 rounded-2xl shadow-sm w-full max-w-sm"
       >
+               <div className="flex flex-col items-center mb-1">
+  <img
+  src={darkMode ? logoDark : logoLight}
+  alt="Syllabus"
+  className="w-40 h-40"
+/>
+</div>
         <h1 className="text-xl text-gray-900 dark:text-white font-medium mb-1">
           {t.createAccount}
         </h1>
@@ -59,7 +68,7 @@ export const Register = () => {
           placeholder={t.name}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full border dark:border-gray-600 rounded-lg px-3 py-2 text-sm mb-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="w-full border dark:border-neutral-600 rounded-lg px-3 py-2 text-sm mb-3 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white"
           required
         />
 
@@ -68,7 +77,7 @@ export const Register = () => {
           placeholder={t.email}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full border dark:border-gray-600 rounded-lg px-3 py-2 text-sm mb-3 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="w-full border dark:border-neutral-600 rounded-lg px-3 py-2 text-sm mb-3 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white"
           required
         />
 
@@ -77,7 +86,7 @@ export const Register = () => {
           placeholder={t.password}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full border dark:border-gray-600 rounded-lg px-3 py-2 text-sm mb-4 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="w-full border dark:border-neutral-600 rounded-lg px-3 py-2 text-sm mb-4 bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white"
           required
         />
 
@@ -118,7 +127,6 @@ export const Register = () => {
 
       {/* Selector idioma */}
       <div className="absolute bottom-6">
-        <LanguageSelector />
       </div>
 
     </div>
