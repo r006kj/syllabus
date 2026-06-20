@@ -10,6 +10,7 @@ import { Calendar } from './pages/Calendar'
 import { Tasks } from './pages/Tasks'
 import { Courses } from './pages/Courses'
 import { CourseDetail } from './pages/CourseDetail'
+import { ProtectedRoute } from './components/ProtectedRoute'
 
 function App() {
   return (
@@ -17,15 +18,19 @@ function App() {
       <LanguageProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/tasks" element={<Tasks />} />
-            <Route path="/calendar" element={<Calendar />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/dashboard" element={<Dashboard />} />
+            {/* Rutas públicas */}
             <Route path="/login" element={<Login />} />
-            <Route path="/courses" element={<Courses />} />
-            <Route path="/courses/:id" element={<CourseDetail />} />
             <Route path="/register" element={<Register />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+
+            {/* Rutas protegidas: requieren sesión */}
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
+            <Route path="/calendar" element={<ProtectedRoute><Calendar /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/courses" element={<ProtectedRoute><Courses /></ProtectedRoute>} />
+            <Route path="/courses/:id" element={<ProtectedRoute><CourseDetail /></ProtectedRoute>} />
+
             <Route path="/" element={<Navigate to="/login" replace />} />
           </Routes>
         </BrowserRouter>

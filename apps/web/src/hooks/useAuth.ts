@@ -14,6 +14,12 @@ export const useAuth = () => {
 
   try {
     const { data } = await axios.post(`${API_URL}/auth/login`, { email, password })
+    // Registramos la sesión en el cliente de Supabase para que gestione el
+    // refresco automático del token (igual que el login con Google).
+    await supabase.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token
+    })
     localStorage.setItem('access_token', data.session.access_token)
     localStorage.setItem('user', JSON.stringify(data.user))
     return data
@@ -49,7 +55,8 @@ const loginWithGoogle = async () => {
     setLoading(false)
   }
 }
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut()
     localStorage.removeItem('access_token')
     localStorage.removeItem('user')
   }

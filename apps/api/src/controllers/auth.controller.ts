@@ -1,9 +1,14 @@
 import { Request, Response } from 'express'
-import { supabase } from '../lib/supabase'
 import { createAuthClient } from '../lib/supabaseAuth'
+import { requireFields, isEmail, AppError } from '../utils/validate'
 
 export const register = async (req: Request, res: Response) => {
+  requireFields(req.body, ['email', 'password', 'name'])
   const { email, password, name } = req.body
+  if (!isEmail(email)) throw new AppError('Email inválido')
+  if (typeof password !== 'string' || password.length < 6) {
+    throw new AppError('La contraseña debe tener al menos 6 caracteres')
+  }
   const authClient = createAuthClient()
 
   const { data, error } = await authClient.auth.signUp({
@@ -17,6 +22,7 @@ export const register = async (req: Request, res: Response) => {
 }
 
 export const login = async (req: Request, res: Response) => {
+  requireFields(req.body, ['email', 'password'])
   const { email, password } = req.body
   const authClient = createAuthClient()
 
@@ -36,5 +42,5 @@ export const logout = async (req: Request, res: Response) => {
 }
 
 export const me = async (req: Request, res: Response) => {
-  return res.json({ user: (req as any).user })
+  return res.json({ user: req.user })
 }

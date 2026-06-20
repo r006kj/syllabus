@@ -1,33 +1,34 @@
 import { Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
 import { extractSyllabusDates } from '../services/syllabus.service'
+import { getCanvasCredentials } from '../services/profile.service'
 
 export const extractSyllabus = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
   const { courseId } = req.params
 
-  const { data: userData } = await supabase
-    .from('profiles')
-    .select('canvas_token, canvas_domain')
-    .eq('id', user.id)
-    .single()
+  const credentials = await getCanvasCredentials(user.id)
+  if (!credentials) return res.status(400).json({ error: 'Canvas not connected' })
 
-  if (!userData?.canvas_token) return res.status(400).json({ error: 'Canvas not connected' })
+  // Verifica que el curso pertenezca al usuario (IDOR).
+  const { data: course } = await supabase
+    .from('courses')
+    .select('canvas_course_id, is_primary, name')
+    .eq('id', courseId)
+    .eq('user_id', user.id)
+    .maybeSingle()
 
-  const { canvas_token, canvas_domain } = userData
+  if (!course) return res.status(404).json({ error: 'Course not found' })
 
-const { data: course } = await supabase
-  .from('courses')
-  .select('canvas_course_id, is_primary, name')
-  .eq('id', courseId)
-  .single()
+  if (!course.is_primary) {
+    return res.json({ message: `Este curso está vinculado a su versión teoría/lab, el sílabo ya fue procesado allí.` })
+  }
 
-if (!course) return res.status(404).json({ error: 'Course not found' })
-
-if (!course.is_primary) {
-  return res.json({ message: `Este curso está vinculado a su versión teoría/lab, el sílabo ya fue procesado allí.` })
-}
-  const result = await extractSyllabusDates(canvas_domain, canvas_token, Number(course.canvas_course_id))
+  const result = await extractSyllabusDates(
+    credentials.domain,
+    credentials.token,
+    Number(course.canvas_course_id)
+  )
 
   if (!result.found) return res.json({ message: 'No syllabus file found', dates: [] })
 
@@ -36,6 +37,7 @@ if (!course.is_primary) {
       course_id: courseId,
       title: item.title,
       type: item.type,
+      due_date: item.due_date, // ahora derivado de la semana del sílabo
       status: 'pendiente'
     })
   }

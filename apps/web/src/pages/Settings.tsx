@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Sidebar } from '../components/Sidebar'
 import { useTheme } from '../hooks/useTheme'
 import { useLanguage } from '../hooks/useLanguage'
@@ -9,6 +9,7 @@ import { api } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
 
 type SettingsSection = 'profile' | 'appearance' | 'language' | 'notifications' | 'integrations' | 'canvas' | 'account'
+
 
 const sections: { id: SettingsSection; label: string; icon: string }[] = [
   { id: 'profile', label: 'Perfil', icon: 'person' },
@@ -24,6 +25,7 @@ const cardClass = 'bg-white dark:bg-warmgray-800 rounded-2xl p-6 border border-w
 const labelClass = 'text-sm font-bold text-warmgray-500 dark:text-warmgray-400 uppercase tracking-wide mb-4'
 
 export const Settings = () => {
+
   const [active, setActive] = useState<SettingsSection>('profile')
   const { darkMode, toggleTheme } = useTheme()
   const { language, setLanguage } = useLanguage()
@@ -39,6 +41,15 @@ export const Settings = () => {
   const [savingPrefs, setSavingPrefs] = useState(false)
   const [connectingCanvas, setConnectingCanvas] = useState(false)
 
+  const [semesterStart, setSemesterStart] = useState('')
+  const [savingSemesterStart, setSavingSemesterStart] = useState(false)
+
+  useEffect(() => {
+    if (settings?.semester_start) {
+      setSemesterStart(settings.semester_start)
+    }
+  }, [settings?.semester_start])
+
   const handleSaveNotifPrefs = async () => {
     setSavingPrefs(true)
     try {
@@ -52,11 +63,21 @@ export const Settings = () => {
     }
   }
 
+  const handleSaveSemesterStart = async () => {
+    setSavingSemesterStart(true)
+    try {
+      await api.patch('/profile/semester-start', { semester_start: semesterStart })
+      await refresh()
+    } finally {
+      setSavingSemesterStart(false)
+    }
+  }
+
   const handleConnectCanvas = async () => {
     setConnectingCanvas(true)
     try {
       await api.post('/canvas/connect', { canvas_token: canvasToken, canvas_domain: canvasDomain })
-      await api.get('/canvas/sync')
+      await api.post('/canvas/sync')
       await refresh()
       setCanvasToken('')
     } finally {
@@ -70,7 +91,7 @@ export const Settings = () => {
   }
 
   const handleSyncCanvas = async () => {
-    await api.get('/canvas/sync')
+    await api.post('/canvas/sync')
   }
 
   const handleConnectGoogle = async () => {
@@ -82,8 +103,8 @@ export const Settings = () => {
     await api.post('/integrations/notion/sync')
   }
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/login')
   }
 
@@ -114,18 +135,40 @@ export const Settings = () => {
           </nav>
         </aside>
 
-        <section className="flex-1 max-w-xl">
+        <section className="flex-1 max-w-xl flex flex-col gap-4">
 
           {active === 'profile' && (
-            <div className={`${cardClass} flex items-center gap-4`}>
-              <div className="w-14 h-14 rounded-full bg-pink-200 dark:bg-pink-900/40 flex items-center justify-center text-pink-700 dark:text-pink-300 font-bold text-xl">
-                {profile?.name?.[0]?.toUpperCase() ?? '?'}
+            <>
+              <div className={`${cardClass} flex items-center gap-4`}>
+                <div className="w-14 h-14 rounded-full bg-pink-200 dark:bg-pink-900/40 flex items-center justify-center text-pink-700 dark:text-pink-300 font-bold text-xl">
+                  {profile?.name?.[0]?.toUpperCase() ?? '?'}
+                </div>
+                <div>
+                  <p className="font-medium text-warmgray-900 dark:text-white">{profile?.name ?? 'Usuario'}</p>
+                  <p className="text-sm text-warmgray-500 dark:text-warmgray-400">{profile?.email ?? ''}</p>
+                </div>
               </div>
-              <div>
-                <p className="font-medium text-warmgray-900 dark:text-white">{profile?.name ?? 'Usuario'}</p>
-                <p className="text-sm text-warmgray-500 dark:text-warmgray-400">{profile?.email ?? ''}</p>
+
+              <div className={cardClass}>
+                <h2 className={labelClass}>Inicio del ciclo académico</h2>
+                <p className="text-sm text-warmgray-600 dark:text-warmgray-300 mb-3">
+                  Se usa para calcular la semana real del ciclo en el rendimiento de cada curso.
+                </p>
+                <input
+                  type="date"
+                  value={semesterStart}
+                  onChange={(e) => setSemesterStart(e.target.value)}
+                  className="w-full border border-warmgray-200 dark:border-warmgray-600 rounded-lg px-3 py-2 text-sm mb-3 bg-white dark:bg-warmgray-700 text-warmgray-900 dark:text-white"
+                />
+                <button
+                  onClick={handleSaveSemesterStart}
+                  disabled={savingSemesterStart || !semesterStart}
+                  className="bg-pink-500 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
+                >
+                  {savingSemesterStart ? 'Guardando...' : 'Guardar'}
+                </button>
               </div>
-            </div>
+            </>
           )}
 
           {active === 'appearance' && (
@@ -271,7 +314,7 @@ export const Settings = () => {
                     className="w-full border border-warmgray-200 dark:border-warmgray-600 rounded-lg px-3 py-2 text-sm mb-3 bg-white dark:bg-warmgray-700 text-warmgray-900 dark:text-white"
                   />
                   <input
-                    type="text"
+                    type="password"
                     placeholder="Access Token de Canvas"
                     value={canvasToken}
                     onChange={(e) => setCanvasToken(e.target.value)}

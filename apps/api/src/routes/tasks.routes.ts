@@ -1,11 +1,13 @@
 import { Router } from 'express'
-import { getTasks, getUpcomingTasks, getOverloadedWeeks } from '../controllers/tasks.controller'
+import { getTasks, getUpcomingTasks, getOverloadedWeeks, updateTask } from '../controllers/tasks.controller'
 import { authMiddleware } from '../middlewares/auth.middleware'
+import { asyncHandler } from '../utils/asyncHandler'
 
 const router = Router()
 
-router.get('/', authMiddleware, getTasks)
-router.get('/upcoming', authMiddleware, getUpcomingTasks)
-router.get('/overloaded-weeks', authMiddleware, getOverloadedWeeks)
+router.get('/', authMiddleware, asyncHandler(getTasks))
+router.get('/upcoming', authMiddleware, asyncHandler(getUpcomingTasks))
+router.get('/overloaded-weeks', authMiddleware, asyncHandler(getOverloadedWeeks))
+router.patch('/:id', authMiddleware, asyncHandler(updateTask))
 
 export default router

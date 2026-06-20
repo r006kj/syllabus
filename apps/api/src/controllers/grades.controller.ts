@@ -2,7 +2,18 @@ import { Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
 
 export const getCourseGrades = async (req: Request, res: Response) => {
+  const user = req.user!
   const { courseId } = req.params
+
+  // Verifica que el curso pertenezca al usuario.
+  const { data: course } = await supabase
+    .from('courses')
+    .select('id')
+    .eq('id', courseId)
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (!course) return res.status(404).json({ error: 'Curso no encontrado' })
 
   const { data, error } = await supabase
     .from('tasks')
@@ -14,7 +25,7 @@ export const getCourseGrades = async (req: Request, res: Response) => {
 }
 
 export const getGradesOverview = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
   const { data, error } = await supabase
     .from('courses')

@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { generateFreeSlots, assignStudyBlocks } from '../services/planner.service'
 
 export const generatePlan = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
   const { data: scheduleBlocks } = await supabase
     .from('schedule_blocks')
@@ -56,7 +56,7 @@ export const generatePlan = async (req: Request, res: Response) => {
 }
 
 export const getStudyBlocks = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
   const { data, error } = await supabase
     .from('study_blocks')

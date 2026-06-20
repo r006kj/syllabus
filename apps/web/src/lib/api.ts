@@ -1,12 +1,17 @@
 import axios from 'axios'
+import { supabase } from './supabase'
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL
 })
 
 api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('access_token')
+  async (config) => {
+    // Tomamos el token directamente de la sesión de Supabase: si está por
+    // caducar, supabase lo refresca solo. Así evitamos usar un token obsoleto
+    // de localStorage (causa de los 401 → redirección a login).
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token ?? localStorage.getItem('access_token')
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
@@ -23,6 +28,7 @@ api.interceptors.response.use(
     const status = error.response?.status
 
     if (status === 401) {
+      await supabase.auth.signOut()
       localStorage.removeItem('access_token')
       localStorage.removeItem('user')
 
@@ -34,4 +40,3 @@ api.interceptors.response.use(
     return Promise.reject(error)
   }
 )
-

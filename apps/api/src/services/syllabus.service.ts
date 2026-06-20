@@ -3,6 +3,10 @@ const pdfParse = require('pdf-parse')
 
 import { openai } from '../lib/openai'
 import { fetchCourseDetails, fetchModules } from './canvas.service'
+import { parseAiJson } from '../utils/safeJson'
+import { weekNumberToDate } from '../utils/weekToDate'
+
+type SyllabusItem = { title: string; week: number; type: string }
 
 const findSyllabusFile = (modules: any[]) => {
   for (const module of modules) {
@@ -38,7 +42,7 @@ const downloadPdf = async (url: string, token: string) => {
   return parsed.text
 }
 
-const extractDatesWithAI = async (text: string, currentTerm: string) => {
+const extractDatesWithAI = async (text: string, currentTerm: string): Promise<SyllabusItem[]> => {
   const prompt = `
 Eres un asistente que extrae fechas de evaluaciones de un sílabo universitario.
 
@@ -57,23 +61,21 @@ Texto:
 ${text.slice(-4000)}
 `
   const completion = await openai.chat.completions.create({
-    model: 'gpt-5-mini',
+    model: 'gpt-4o-mini',
     messages: [
       { role: 'system', content: 'Devuelve únicamente JSON válido.' },
       { role: 'user', content: prompt }
     ]
   })
 
-  const response = completion.choices[0].message.content ?? '[]'
-  const cleaned = response.replace(/```json/g, '').replace(/```/g, '').trim()
-  return JSON.parse(cleaned)
+  return parseAiJson<SyllabusItem[]>(completion.choices[0].message.content, [])
 }
 
 export const extractSyllabusDates = async (domain: string, token: string, courseId: number) => {
   const modules = await fetchModules(domain, token, courseId)
   const syllabusItem = findSyllabusFile(modules)
 
-  if (!syllabusItem) return { found: false, dates: [] }
+  if (!syllabusItem) return { found: false, dates: [] as Array<SyllabusItem & { due_date: string | null }> }
 
   const fileInfo = await axios.get(syllabusItem.url, { headers: { Authorization: `Bearer ${token}` } })
   const pdfUrl = fileInfo.data.url
@@ -81,8 +83,16 @@ export const extractSyllabusDates = async (domain: string, token: string, course
 
   const courseDetails = await fetchCourseDetails(domain, token, courseId)
   const currentTerm = courseDetails.term?.name ?? 'ciclo regular'
+  // start_at del ciclo: punto de partida para convertir "semana N" en una fecha real.
+  const termStart: string | undefined = courseDetails.term?.start_at ?? courseDetails.start_at
 
   const dates = await extractDatesWithAI(text, currentTerm)
 
-  return { found: true, dates }
+  // Mapeamos cada "semana N" a una fecha concreta para que las tareas tengan due_date.
+  const withDates = dates.map((d) => ({
+    ...d,
+    due_date: weekNumberToDate(termStart, d.week)
+  }))
+
+  return { found: true, dates: withDates }
 }

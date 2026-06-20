@@ -10,6 +10,6 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
   if (error || !data.user) return res.status(401).json({ error: 'Invalid token' })
 
-  ;(req as any).user = data.user
+  req.user = data.user
   next()
 }

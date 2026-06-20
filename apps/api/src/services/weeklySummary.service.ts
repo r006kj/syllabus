@@ -1,5 +1,6 @@
 import { openai } from '../lib/openai'
 import { fetchModules } from './canvas.service'
+import { parseAiJson } from '../utils/safeJson'
 
 export const generateWeeklySummary = async (
   domain: string,
@@ -37,7 +38,8 @@ Devuelve SOLO un JSON: { "previous": "...", "upcoming": "..." }
     ]
   })
 
-  const response = completion.choices[0].message.content ?? '{}'
-  const cleaned = response.replace(/```json/g, '').replace(/```/g, '').trim()
-  return JSON.parse(cleaned)
+  return parseAiJson<{ previous: string; upcoming: string }>(
+    completion.choices[0].message.content,
+    { previous: '', upcoming: '' }
+  )
 }

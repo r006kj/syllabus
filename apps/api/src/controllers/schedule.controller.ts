@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { extractScheduleFromImage } from '../services/schedule.service'
 
 export const getSchedule = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
   const { data, error } = await supabase
     .from('schedule_blocks')
@@ -16,7 +16,7 @@ export const getSchedule = async (req: Request, res: Response) => {
 }
 
 export const addBlock = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
   const { course_id, day_of_week, start_time, end_time, location } = req.body
 
   const { data, error } = await supabase
@@ -30,16 +30,24 @@ export const addBlock = async (req: Request, res: Response) => {
 }
 
 export const deleteBlock = async (req: Request, res: Response) => {
+  const user = req.user!
   const { id } = req.params
 
-  const { error } = await supabase.from('schedule_blocks').delete().eq('id', id)
+  // El filtro por user_id evita borrar bloques de otro usuario (IDOR).
+  const { data, error } = await supabase
+    .from('schedule_blocks')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .select()
 
   if (error) return res.status(400).json({ error: error.message })
+  if (!data || data.length === 0) return res.status(404).json({ error: 'Bloque no encontrado' })
   return res.json({ message: 'Block deleted' })
 }
 
 export const uploadSchedule = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
   const file = req.file
 
   if (!file) return res.status(400).json({ error: 'No image provided' })

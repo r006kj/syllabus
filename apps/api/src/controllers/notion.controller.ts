@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { notion } from '../lib/notion'
 
 export const syncToNotion = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
   const { data: tasks } = await supabase
     .from('tasks')

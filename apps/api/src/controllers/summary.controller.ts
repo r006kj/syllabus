@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
 import { generateWeeklySummary } from '../services/weeklySummary.service'
+import { getCanvasCredentials } from '../services/profile.service'
 
 const getWeekStart = () => {
   const date = new Date()
@@ -13,15 +14,10 @@ const getWeekStart = () => {
 }
 
 export const generateSummary = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
-  const { data: profileData } = await supabase
-    .from('profiles')
-    .select('canvas_token, canvas_domain')
-    .eq('id', user.id)
-    .single()
-
-  if (!profileData?.canvas_token) return res.status(400).json({ error: 'Canvas no conectado' })
+  const credentials = await getCanvasCredentials(user.id)
+  if (!credentials) return res.status(400).json({ error: 'Canvas no conectado' })
 
   const { data: courses } = await supabase
     .from('courses')
@@ -34,8 +30,8 @@ export const generateSummary = async (req: Request, res: Response) => {
   for (const course of courses ?? []) {
     try {
       const summary = await generateWeeklySummary(
-        profileData.canvas_domain,
-        profileData.canvas_token,
+        credentials.domain,
+        credentials.token,
         Number(course.canvas_course_id),
         course.name
       )
@@ -59,7 +55,7 @@ export const generateSummary = async (req: Request, res: Response) => {
 }
 
 export const getSummaries = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
   const { data, error } = await supabase
     .from('weekly_summaries')
@@ -72,7 +68,7 @@ export const getSummaries = async (req: Request, res: Response) => {
 }
 
 export const toggleAutoSummary = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
   const { auto_generated } = req.body
 
   const { error } = await supabase

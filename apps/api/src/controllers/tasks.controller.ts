@@ -1,8 +1,22 @@
 import { Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
 
+/**
+ * Verifica que la tarea pertenezca al usuario (vía el curso) antes de tocarla.
+ * Evita IDOR: que un usuario modifique tareas de otro cambiando el id.
+ */
+const userOwnsTask = async (taskId: string, userId: string): Promise<boolean> => {
+  const { data } = await supabase
+    .from('tasks')
+    .select('id, courses!inner(user_id)')
+    .eq('id', taskId)
+    .eq('courses.user_id', userId)
+    .maybeSingle()
+  return !!data
+}
+
 export const getTasks = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
   const { data, error } = await supabase
     .from('tasks')
@@ -15,7 +29,7 @@ export const getTasks = async (req: Request, res: Response) => {
 }
 
 export const getUpcomingTasks = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
   const now = new Date().toISOString()
 
   const { data, error } = await supabase
@@ -31,7 +45,7 @@ export const getUpcomingTasks = async (req: Request, res: Response) => {
 }
 
 export const getOverloadedWeeks = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
   const { data, error } = await supabase
     .from('tasks')
@@ -77,8 +91,13 @@ export const getOverloadedWeeks = async (req: Request, res: Response) => {
   return res.json(overloaded)
 }
 export const updateTask = async (req: Request, res: Response) => {
-  const { id } = req.params
+  const user = req.user!
+  const id = String(req.params.id)
   const { status, complexity, estimated_hours } = req.body
+
+  if (!(await userOwnsTask(id, user.id))) {
+    return res.status(404).json({ error: 'Tarea no encontrada' })
+  }
 
   const updates: any = {}
   if (status !== undefined) updates.status = status

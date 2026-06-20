@@ -2,7 +2,7 @@ import { Request, Response } from 'express'
 import { supabase } from '../lib/supabase'
 
 export const getAvailability = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
 
   const { data, error } = await supabase
     .from('availability_blocks')
@@ -14,7 +14,7 @@ export const getAvailability = async (req: Request, res: Response) => {
 }
 
 export const addAvailability = async (req: Request, res: Response) => {
-  const user = (req as any).user
+  const user = req.user!
   const { day_of_week, start_time, end_time } = req.body
 
   const { data, error } = await supabase

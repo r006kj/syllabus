@@ -1,6 +1,14 @@
 import { openai } from '../lib/openai'
+import { parseAiJson } from '../utils/safeJson'
 
-export const extractScheduleFromImage = async (imageBuffer: Buffer) => {
+type ScheduleBlock = {
+  day_of_week: number
+  start_time: string
+  end_time: string
+  location?: string
+}
+
+export const extractScheduleFromImage = async (imageBuffer: Buffer): Promise<ScheduleBlock[]> => {
   const base64Image = imageBuffer.toString('base64')
 
   const completion = await openai.chat.completions.create({
@@ -36,7 +44,5 @@ Si no hay ubicación visible, omite el campo location.
     ]
   })
 
-  const response = completion.choices[0].message.content ?? '[]'
-  const cleaned = response.replace(/```json/g, '').replace(/```/g, '').trim()
-  return JSON.parse(cleaned)
+  return parseAiJson<ScheduleBlock[]>(completion.choices[0].message.content, [])
 }

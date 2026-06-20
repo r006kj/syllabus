@@ -7,6 +7,7 @@ type SettingsData = {
   google_connected: boolean
   notify_hours_before: number
   notifications_enabled: boolean
+  semester_start: string | null // <-- Nuevo campo añadido
 }
 
 export const useSettingsData = () => {
@@ -23,7 +24,6 @@ export const useSettingsData = () => {
     }
   }, [])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     refresh()
   }, [refresh])

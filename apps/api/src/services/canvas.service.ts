@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { fetchAllPages } from '../utils/canvasPaginate'
 
 export const createCanvasClient = (domain: string, token: string) => {
   return axios.create({
@@ -9,26 +10,20 @@ export const createCanvasClient = (domain: string, token: string) => {
 
 export const fetchCourses = async (domain: string, token: string) => {
   const client = createCanvasClient(domain, token)
-  const { data } = await client.get('/courses?enrollment_state=active&per_page=50')
-  return data
+  return fetchAllPages(client, '/courses?enrollment_state=active&per_page=100')
 }
-
 
 export const fetchAssignments = async (domain: string, token: string, courseId: number) => {
   const client = createCanvasClient(domain, token)
-  const { data } = await client.get(`/courses/${courseId}/assignments`, {
-    params: {
-      per_page: 50,
-      'include[]': 'submission'
-    }
-  })
-  return data
+  return fetchAllPages(
+    client,
+    `/courses/${courseId}/assignments?per_page=100&include[]=submission`
+  )
 }
 
 export const fetchModules = async (domain: string, token: string, courseId: number) => {
   const client = createCanvasClient(domain, token)
-  const { data } = await client.get(`/courses/${courseId}/modules?include[]=items&per_page=50`)
-  return data
+  return fetchAllPages(client, `/courses/${courseId}/modules?include[]=items&per_page=100`)
 }
 
 export const fetchSyllabus = async (domain: string, token: string, courseId: number) => {
@@ -42,4 +37,3 @@ export const fetchCourseDetails = async (domain: string, token: string, courseId
   const { data } = await client.get(`/courses/${courseId}?include[]=term`)
   return data
 }
-
