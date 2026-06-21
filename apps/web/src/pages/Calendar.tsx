@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Sidebar } from '../components/Sidebar'
 import { api } from '../lib/api'
+import { useSettingsData } from '../hooks/useSettingsData'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,14 @@ const BLOCK_COLORS = [
   { bg: 'bg-rose-500/20 dark:bg-rose-500/30', border: 'border-rose-400', text: 'text-rose-100 dark:text-rose-100', dot: 'bg-rose-400', solid: 'bg-rose-600' },
   { bg: 'bg-cyan-500/20 dark:bg-cyan-500/30', border: 'border-cyan-400', text: 'text-cyan-100 dark:text-cyan-100', dot: 'bg-cyan-400', solid: 'bg-cyan-600' },
 ]
+
+// Colores por intensidad/prioridad — usados en SessionModal y bloques de estudio
+const PRIORITY_COLORS: Record<string, { border: string; bg: string; text: string; solid: string; dot: string }> = {
+  high: { border: 'border-red-500', bg: 'bg-red-500/15', text: 'text-red-300', solid: 'bg-red-500', dot: 'bg-red-400' },
+  medium: { border: 'border-amber-500', bg: 'bg-amber-500/15', text: 'text-amber-300', solid: 'bg-amber-500', dot: 'bg-amber-400' },
+  low: { border: 'border-emerald-500', bg: 'bg-emerald-500/15', text: 'text-emerald-300', solid: 'bg-emerald-500', dot: 'bg-emerald-400' },
+}
+const priorityColor = (p?: string) => PRIORITY_COLORS[p ?? 'medium']
 
 const HOUR_HEIGHT = 64
 const START_HOUR_DEFAULT = 7
@@ -31,11 +40,17 @@ const minutesToTime = (m: number) => {
   return `${h}:${min}`
 }
 
-const getWeekDates = () => {
+const getTimeStringFromIso = (iso: string) => {
+  if (!iso) return '00:00'
+  const d = new Date(iso)
+  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+}
+
+const getWeekDates = (weekOffset: number) => {
   const today = new Date()
   const dow = today.getDay()
   const monday = new Date(today)
-  monday.setDate(today.getDate() - ((dow + 6) % 7))
+  monday.setDate(today.getDate() - ((dow + 6) % 7) + (weekOffset * 7))
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday)
     d.setDate(monday.getDate() + i)
@@ -60,10 +75,11 @@ const fmtDuration = (startIso: string, endIso: string) => {
 type ScheduleBlock = {
   id: string
   day_of_week: number
-  start_time: string   // "HH:MM"
+  start_time: string
   end_time: string
   course_name: string
   location?: string
+  attendance_required?: boolean
 }
 
 type Task = {
@@ -77,12 +93,11 @@ type Task = {
 type StudySession = {
   id: string
   task_id?: string
-  start_time: string   // ISO
-  end_time: string     // ISO
+  start_time: string
+  end_time: string
   priority?: string
   auto_generated?: boolean
   tasks?: { title: string; due_date?: string }
-  // local overrides
   _title?: string
   _course_name?: string
   _selected_task_ids?: string[]
@@ -108,6 +123,7 @@ const BlockModal = ({
 }) => {
   const [form, setForm] = useState<Partial<ScheduleBlock>>({
     day_of_week: 0, start_time: '08:00', end_time: '10:00', course_name: '', location: '',
+    attendance_required: true,
     ...block
   })
   const [saving, setSaving] = useState(false)
@@ -162,6 +178,27 @@ const BlockModal = ({
               </div>
             ))}
           </div>
+
+          {/* Toggle: requiere asistencia */}
+          <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 mt-1">
+            <div>
+              <p className="text-xs font-bold text-white">Requiere asistencia</p>
+              <p className="text-[10px] text-white/40 mt-0.5">El curso exige presencia obligatoria</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm(p => ({ ...p, attendance_required: !p.attendance_required }))}
+              className={`w-11 h-6 rounded-full relative transition-colors flex items-center px-1 flex-shrink-0 ${
+                form.attendance_required ? 'bg-pink-500' : 'bg-white/15'
+              }`}
+            >
+              <span
+                className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                  form.attendance_required ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
         </div>
         <div className="flex gap-2 mt-5">
           <button onClick={handle} disabled={saving}
@@ -191,16 +228,20 @@ const SessionModal = ({
   onDelete?: () => Promise<void>
   onClose: () => void
 }) => {
-  const [form, setForm] = useState<Partial<StudySession>>({
-    start_time: '', end_time: '', _title: '', _course_name: '',
-    _selected_task_ids: [],
+  const [form, setForm] = useState<Partial<StudySession>>(() => ({
     ...session,
+    start_time: session.start_time ?? '',
+    end_time: session.end_time ?? '',
+    priority: session.priority ?? 'medium',
     _title: session._title ?? session.tasks?.title ?? '',
     _course_name: session._course_name ?? '',
     _selected_task_ids: session._selected_task_ids ?? (session.task_id ? [session.task_id] : []),
-  })
+  }))
+
   const [saving, setSaving] = useState(false)
   const [tab, setTab] = useState<'info' | 'tasks'>('info')
+
+  const colors = priorityColor(form.priority)
 
   const toggleTask = (id: string) => {
     setForm(p => {
@@ -218,20 +259,19 @@ const SessionModal = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-[#1a1a1a] rounded-2xl shadow-2xl w-full max-w-sm border border-white/10 overflow-hidden">
-        <div className="flex items-center justify-between px-6 pt-5 pb-4">
+      <div className={`bg-[#1a1a1a] rounded-2xl shadow-2xl w-full max-w-sm border-2 ${colors.border} overflow-hidden transition-colors`}>
+        <div className={`flex items-center justify-between px-6 pt-5 pb-4 ${colors.bg}`}>
           <h2 className="text-sm font-bold text-white">{session.id ? 'Editar sesión' : 'Nueva sesión'}</h2>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-white/10 px-6">
           {(['info', 'tasks'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`pb-2.5 mr-5 text-xs font-bold border-b-2 transition-colors ${tab === t
-                ? 'border-pink-500 text-white'
+                ? `${colors.border} text-white`
                 : 'border-transparent text-white/40 hover:text-white/60'}`}>
               {t === 'info' ? 'Info' : `Tareas (${pendingTasks.length})`}
             </button>
@@ -244,7 +284,7 @@ const SessionModal = ({
               <div>
                 <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1 block">Título</label>
                 <input
-                  className="w-full rounded-xl border border-white/10 bg-white/5 text-sm text-white px-3 py-2 focus:outline-none focus:border-pink-500 placeholder-white/20"
+                  className={`w-full rounded-xl border ${colors.border}/40 bg-white/5 text-sm text-white px-3 py-2 focus:outline-none focus:${colors.border} placeholder-white/20`}
                   value={form._title ?? ''}
                   onChange={e => setForm(p => ({ ...p, _title: e.target.value }))}
                   placeholder="Ej: Repaso Cálculo"
@@ -253,7 +293,7 @@ const SessionModal = ({
               <div>
                 <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1 block">Curso</label>
                 <input
-                  className="w-full rounded-xl border border-white/10 bg-white/5 text-sm text-white px-3 py-2 focus:outline-none focus:border-pink-500 placeholder-white/20"
+                  className={`w-full rounded-xl border ${colors.border}/40 bg-white/5 text-sm text-white px-3 py-2 focus:outline-none placeholder-white/20`}
                   value={form._course_name ?? ''}
                   onChange={e => setForm(p => ({ ...p, _course_name: e.target.value }))}
                   placeholder="Curso relacionado"
@@ -263,7 +303,7 @@ const SessionModal = ({
                 <div>
                   <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1 block">Inicio</label>
                   <input type="datetime-local"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 text-xs text-white px-2 py-2 focus:outline-none focus:border-pink-500"
+                    className={`w-full rounded-xl border ${colors.border}/40 bg-white/5 text-xs text-white px-2 py-2 focus:outline-none`}
                     value={form.start_time?.slice(0, 16) ?? ''}
                     onChange={e => setForm(p => ({ ...p, start_time: e.target.value }))}
                   />
@@ -271,15 +311,15 @@ const SessionModal = ({
                 <div>
                   <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1 block">Fin</label>
                   <input type="datetime-local"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 text-xs text-white px-2 py-2 focus:outline-none focus:border-pink-500"
+                    className={`w-full rounded-xl border ${colors.border}/40 bg-white/5 text-xs text-white px-2 py-2 focus:outline-none`}
                     value={form.end_time?.slice(0, 16) ?? ''}
                     onChange={e => setForm(p => ({ ...p, end_time: e.target.value }))}
                   />
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1 block">Prioridad</label>
-                <select className="w-full rounded-xl border border-white/10 bg-white/5 text-sm text-white px-3 py-2 focus:outline-none focus:border-pink-500"
+                <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1 block">Prioridad / Intensidad</label>
+                <select className={`w-full rounded-xl border ${colors.border} ${colors.bg} text-sm text-white px-3 py-2 focus:outline-none transition-colors`}
                   value={form.priority ?? 'medium'}
                   onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}>
                   <option value="high" className="bg-[#1a1a1a]">Alta</option>
@@ -302,11 +342,11 @@ const SessionModal = ({
                 return (
                   <button key={task.id} onClick={() => toggleTask(task.id)}
                     className={`w-full text-left rounded-xl border px-3 py-2.5 transition-all ${selected
-                      ? 'border-pink-500 bg-pink-500/10'
+                      ? `${colors.border} ${colors.bg}`
                       : 'border-white/10 bg-white/5 hover:border-white/20'}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${selected ? 'border-pink-500 bg-pink-500' : 'border-white/20'}`}>
+                        <div className={`w-4 h-4 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${selected ? `${colors.border} ${colors.solid}` : 'border-white/20'}`}>
                           {selected && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
                         </div>
                         <span className="text-xs text-white font-medium leading-tight">{task.title}</span>
@@ -329,7 +369,7 @@ const SessionModal = ({
 
         <div className="flex gap-2 px-6 pb-5">
           <button onClick={handle} disabled={saving}
-            className="flex-1 bg-pink-500 hover:bg-pink-600 disabled:opacity-50 text-white rounded-xl py-2.5 text-sm font-bold transition-colors">
+            className={`flex-1 ${colors.solid} hover:brightness-110 disabled:opacity-50 text-white rounded-xl py-2.5 text-sm font-bold transition-all`}>
             {saving ? 'Guardando...' : 'Guardar'}
           </button>
           {onDelete && (
@@ -417,6 +457,7 @@ const PrefsModal = ({ prefs, onSave, onClose }: {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const Calendar = () => {
+  const { data: settings } = useSettingsData()
   const [scheduleBlocks, setScheduleBlocks] = useState<ScheduleBlock[]>([])
   const [sessions, setSessions] = useState<StudySession[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
@@ -424,6 +465,9 @@ export const Calendar = () => {
   const [generating, setGenerating] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [extended, setExtended] = useState(false)
+
+  const [weekOffset, setWeekOffset] = useState(0)
+
   const [editingBlock, setEditingBlock] = useState<Partial<ScheduleBlock> | null>(null)
   const [editingSession, setEditingSession] = useState<Partial<StudySession> | null>(null)
   const [showPrefs, setShowPrefs] = useState(false)
@@ -435,12 +479,43 @@ export const Calendar = () => {
   const endHour = extended ? 24 : END_HOUR_DEFAULT
   const totalHours = endHour - startHour
   const hours = Array.from({ length: totalHours + 1 }, (_, i) => startHour + i)
-  const weekDates = getWeekDates()
+
+  const weekDates = getWeekDates(weekOffset)
+
+  const monthStart = weekDates[0].toLocaleString('es-PE', { month: 'long' })
+  const monthEnd = weekDates[6].toLocaleString('es-PE', { month: 'long' })
+  const yearStart = weekDates[0].getFullYear()
+  const yearEnd = weekDates[6].getFullYear()
+
+  let monthLabel = ''
+  if (monthStart === monthEnd) {
+    monthLabel = `${monthStart} ${yearStart}`
+  } else if (yearStart === yearEnd) {
+    monthLabel = `${monthStart} - ${monthEnd} ${yearStart}`
+  } else {
+    monthLabel = `${monthStart} ${yearStart} - ${monthEnd} ${yearEnd}`
+  }
+
+  let weekNumberLabel = weekOffset + 1
+  if (settings?.semester_start) {
+    const semesterStart = new Date(settings.semester_start)
+    const startDow = semesterStart.getDay()
+    const startMonday = new Date(semesterStart)
+    startMonday.setDate(semesterStart.getDate() - ((startDow + 6) % 7))
+    startMonday.setHours(0, 0, 0, 0)
+
+    const viewedMonday = new Date(weekDates[0])
+    viewedMonday.setHours(0, 0, 0, 0)
+
+    const diffTime = viewedMonday.getTime() - startMonday.getTime()
+    const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7))
+    weekNumberLabel = diffWeeks + 1
+  }
+
   const today = new Date()
   const todayDow = (today.getDay() + 6) % 7
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // ── Fetch all data ──────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     setLoadingBlocks(true)
     try {
@@ -450,7 +525,6 @@ export const Calendar = () => {
         api.get('/tasks'),
       ])
 
-      // Schedule blocks: API returns { day_of_week, start_time, end_time, location, courses: { name } }
       const blocks: ScheduleBlock[] = (blocksRes.data ?? []).map((b: any) => ({
         id: b.id,
         day_of_week: b.day_of_week,
@@ -458,13 +532,10 @@ export const Calendar = () => {
         end_time: b.end_time?.slice(0, 5) ?? '01:00',
         course_name: b.courses?.name ?? b.course_name ?? 'Clase',
         location: b.location,
+        attendance_required: b.attendance_required ?? true
       }))
       setScheduleBlocks(blocks)
-
-      // Study sessions: { id, start_time, end_time, priority, tasks: { title, due_date } }
       setSessions(studyRes.data ?? [])
-
-      // Tasks for selection in session modal
       setTasks(tasksRes.data ?? [])
     } catch (e) {
       console.error(e)
@@ -481,18 +552,21 @@ export const Calendar = () => {
     }
   }, [extended, startHour])
 
-  // ── Schedule block CRUD ─────────────────────────────────────────────────────
   const saveBlock = async (form: Partial<ScheduleBlock>) => {
-    if (form.id) {
-      await api.delete(`/schedule/blocks/${form.id}`)
-    }
-    await api.post('/schedule/blocks', {
+    const payload = {
       day_of_week: form.day_of_week,
       start_time: form.start_time,
       end_time: form.end_time,
+      course_name: form.course_name ?? null,
       location: form.location ?? null,
-      // course_id not sent since API uses it optionally; name comes back via join
-    })
+      attendance_required: form.attendance_required ?? true
+    }
+
+    if (form.id) {
+      await api.patch(`/schedule/blocks/${form.id}`, payload)
+    } else {
+      await api.post('/schedule/blocks', payload)
+    }
     setEditingBlock(null)
     await fetchAll()
   }
@@ -503,7 +577,6 @@ export const Calendar = () => {
     await fetchAll()
   }
 
-  // ── Upload schedule image ───────────────────────────────────────────────────
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -521,7 +594,6 @@ export const Calendar = () => {
     }
   }
 
-  // ── Generate plan ───────────────────────────────────────────────────────────
   const generatePlan = async () => {
     setGenerating(true)
     try {
@@ -532,57 +604,39 @@ export const Calendar = () => {
     }
   }
 
-  // ── Study session CRUD ──────────────────────────────────────────────────────
   const saveSession = async (form: Partial<StudySession>) => {
-    // Sessions are study_blocks; we create new ones via planner endpoint
-    // For editing we patch the local state since there's no PATCH /study-blocks endpoint
-    // but we can delete + re-insert for now
     const payload = {
       start_time: form.start_time,
       end_time: form.end_time,
       priority: form.priority ?? 'medium',
       task_id: form._selected_task_ids?.[0] ?? form.task_id ?? null,
-      auto_generated: false,
+      title: form._title,
+      course_name: form._course_name,
     }
 
-    if (form.id) {
-      // Update local state immediately (optimistic)
-      setSessions(ss => ss.map(s => s.id === form.id ? {
-        ...s, ...form,
-        tasks: form._selected_task_ids?.length
-          ? { title: tasks.find(t => t.id === form._selected_task_ids![0])?.title ?? s.tasks?.title ?? '', due_date: tasks.find(t => t.id === form._selected_task_ids![0])?.due_date }
-          : s.tasks
-      } : s))
-    } else {
-      // POST new session — use user_id from token (middleware handles auth)
-      try {
-        await api.post('/planner/generate', payload)
-        await fetchAll()
-      } catch {
-        // If generate fails, add locally
-        setSessions(ss => [...ss, {
-          id: String(Date.now()),
-          start_time: form.start_time ?? '',
-          end_time: form.end_time ?? '',
-          priority: form.priority,
-          _title: form._title,
-          _course_name: form._course_name,
-          _selected_task_ids: form._selected_task_ids,
-          tasks: form._selected_task_ids?.length
-            ? { title: tasks.find(t => t.id === form._selected_task_ids![0])?.title ?? form._title ?? 'Sesión', due_date: tasks.find(t => t.id === form._selected_task_ids![0])?.due_date }
-            : { title: form._title ?? 'Sesión' }
-        }])
+    try {
+      if (form.id) {
+        await api.patch(`/planner/study-blocks/${form.id}`, payload)
+      } else {
+        await api.post('/planner/study-blocks', payload)
       }
+      await fetchAll()
+    } catch (e) {
+      console.error('Error guardando sesión:', e)
     }
     setEditingSession(null)
   }
 
   const deleteSession = async (id: string) => {
-    setSessions(ss => ss.filter(s => s.id !== id))
+    try {
+      await api.delete(`/planner/study-blocks/${id}`)
+      await fetchAll()
+    } catch (e) {
+      console.error('Error al eliminar sesión:', e)
+    }
     setEditingSession(null)
   }
 
-  // ── Grid helpers ────────────────────────────────────────────────────────────
   const blockStyle = (start: string, end: string) => {
     const s = timeToMinutes(start) - startHour * 60
     const e = timeToMinutes(end) - startHour * 60
@@ -594,7 +648,6 @@ export const Calendar = () => {
 
   const nowTop = ((today.getHours() * 60 + today.getMinutes() - startHour * 60) / 60) * HOUR_HEIGHT
 
-  // ── Priority badge ──────────────────────────────────────────────────────────
   const priorityBadge = (p?: string) => {
     if (p === 'high') return 'bg-red-500/20 text-red-400'
     if (p === 'low') return 'bg-emerald-500/20 text-emerald-400'
@@ -607,17 +660,31 @@ export const Calendar = () => {
 
       <main className="flex-1 md:ml-64 flex flex-col h-screen overflow-hidden">
 
-        {/* ── Header ── */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-white/8 flex-shrink-0 bg-[#111111]">
-          <div className="flex items-center gap-2">
-            <h1 className="text-base font-bold text-white">Mi Horario</h1>
-            <button onClick={() => setShowPrefs(true)}
-              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/30 hover:text-white/70 transition-colors" title="Preferencias de estudio">
+
+          <div className="flex items-center gap-3">
+            <button onClick={() => setWeekOffset(w => w - 1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors">
+               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+
+            <div className="flex flex-col items-center min-w-[120px]">
+              <h1 className="text-sm font-bold text-white capitalize">{monthLabel}</h1>
+              <span className="text-[10px] text-white/50 font-medium uppercase tracking-widest">
+                Semana {weekNumberLabel} {settings?.semester_start ? '' : '(Relativa)'}
+              </span>
+            </div>
+
+            <button onClick={() => setWeekOffset(w => w + 1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors">
+               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+
+            <button onClick={() => setShowPrefs(true)} className="ml-2 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/30 hover:text-white/70 transition-colors" title="Preferencias de estudio">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/>
               </svg>
             </button>
           </div>
+
           <div className="flex items-center gap-2">
             <button onClick={() => setExtended(e => !e)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${extended
@@ -641,14 +708,12 @@ export const Calendar = () => {
 
         <div className="flex flex-1 overflow-hidden">
 
-          {/* ── GRID ── */}
           <div className="flex-1 flex flex-col overflow-hidden bg-[#111111]">
 
-            {/* Day headers */}
             <div className="flex flex-shrink-0 border-b border-white/8">
               <div className="w-12 flex-shrink-0" />
               {weekDates.map((date, i) => {
-                const isToday = i === todayDow
+                const isToday = i === todayDow && weekOffset === 0
                 return (
                   <div key={i} className={`flex-1 text-center py-3 border-l border-white/5 ${isToday ? 'bg-pink-500/5' : ''}`}>
                     <div className={`text-[9px] font-bold uppercase tracking-widest ${isToday ? 'text-pink-400' : 'text-white/25'}`}>
@@ -664,11 +729,9 @@ export const Calendar = () => {
               })}
             </div>
 
-            {/* Scrollable grid */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden">
               <div className="flex" style={{ height: `${totalHours * HOUR_HEIGHT}px` }}>
 
-                {/* Hour labels */}
                 <div className="w-12 flex-shrink-0 relative">
                   {hours.map(h => (
                     <div key={h} className="absolute left-0 right-0 flex justify-end pr-2"
@@ -678,10 +741,18 @@ export const Calendar = () => {
                   ))}
                 </div>
 
-                {/* Columns */}
-                {weekDates.map((_, dayIdx) => {
-                  const isToday = dayIdx === todayDow
+                {weekDates.map((date, dayIdx) => {
+                  const isToday = dayIdx === todayDow && weekOffset === 0
+
                   const dayBlocks = scheduleBlocks.filter(b => b.day_of_week === dayIdx)
+
+                  const daySessions = sessions.filter(s => {
+                    if (!s.start_time) return false
+                    const sDate = new Date(s.start_time)
+                    return sDate.getFullYear() === date.getFullYear() &&
+                           sDate.getMonth() === date.getMonth() &&
+                           sDate.getDate() === date.getDate()
+                  })
 
                   return (
                     <div key={dayIdx} className={`flex-1 relative border-l border-white/5 ${isToday ? 'bg-pink-500/[0.02]' : ''}`}>
@@ -694,7 +765,6 @@ export const Calendar = () => {
                           style={{ top: `${(h - startHour) * HOUR_HEIGHT + HOUR_HEIGHT / 2}px` }} />
                       ))}
 
-                      {/* Now line */}
                       {isToday && nowTop > 0 && nowTop < totalHours * HOUR_HEIGHT && (
                         <div className="absolute left-0 right-0 z-20 flex items-center pointer-events-none" style={{ top: `${nowTop}px` }}>
                           <div className="w-1.5 h-1.5 rounded-full bg-pink-500 -ml-0.5 flex-shrink-0" />
@@ -702,7 +772,7 @@ export const Calendar = () => {
                         </div>
                       )}
 
-                      {/* Blocks */}
+                      {/* Clases regulares */}
                       {dayBlocks.map(block => {
                         const style = blockStyle(block.start_time, block.end_time)
                         const color = colorForCourse(block.course_name)
@@ -712,7 +782,14 @@ export const Calendar = () => {
                           <button key={block.id} onClick={() => setEditingBlock(block)}
                             className={`absolute left-0.5 right-0.5 rounded-lg border-l-[3px] px-2 py-1 text-left group transition-all hover:brightness-110 z-10 ${color.bg} ${color.border}`}
                             style={{ top: style.top, height: style.height }}>
-                            <p className={`text-[10px] font-bold truncate leading-tight ${color.text}`}>{block.course_name}</p>
+                            <div className="flex items-center gap-1">
+                              {block.attendance_required && (
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" className={`${color.text} opacity-60 flex-shrink-0`}>
+                                  <circle cx="12" cy="12" r="10" />
+                                </svg>
+                              )}
+                              <p className={`text-[10px] font-bold truncate leading-tight ${color.text}`}>{block.course_name}</p>
+                            </div>
                             {durationMin >= 50 && (
                               <p className={`text-[9px] opacity-50 truncate mt-0.5 ${color.text}`}>
                                 {block.start_time}–{block.end_time}{block.location ? ` · ${block.location}` : ''}
@@ -728,13 +805,43 @@ export const Calendar = () => {
                         )
                       })}
 
-                      {/* Double click to add */}
+                      {/* Sesiones de estudio — coloreadas por intensidad/prioridad */}
+                      {daySessions.map(session => {
+                        const startStr = getTimeStringFromIso(session.start_time)
+                        const endStr = getTimeStringFromIso(session.end_time)
+                        const style = blockStyle(startStr, endStr)
+                        const taskTitle = session._title ?? session.tasks?.title ?? 'Sesión de estudio'
+                        const colors = priorityColor(session.priority)
+                        const durationMin = timeToMinutes(endStr) - timeToMinutes(startStr)
+
+                        return (
+                          <button key={`session-${session.id}`} onClick={() => setEditingSession(session)}
+                            className={`absolute left-0.5 right-0.5 rounded-lg border-l-[3px] px-2 py-1 text-left group transition-all hover:brightness-110 z-10 ${colors.bg} ${colors.border}`}
+                            style={{ top: style.top, height: style.height }}>
+                            <p className={`text-[10px] font-bold truncate leading-tight ${colors.text}`}>
+                              [Estudio] {taskTitle}
+                            </p>
+                            {durationMin >= 50 && (
+                              <p className={`text-[9px] opacity-70 truncate mt-0.5 ${colors.text}`}>
+                                {startStr}–{endStr}
+                              </p>
+                            )}
+                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`${colors.text} opacity-70`}>
+                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                              </svg>
+                            </div>
+                          </button>
+                        )
+                      })}
+
                       <div className="absolute inset-0 z-0"
                         onDoubleClick={e => {
                           const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
                           const clickY = e.clientY - rect.top + (scrollRef.current?.scrollTop ?? 0)
                           const mins = Math.round(((clickY / HOUR_HEIGHT) * 60 + startHour * 60) / 30) * 30
-                          setEditingBlock({ day_of_week: dayIdx, start_time: minutesToTime(mins), end_time: minutesToTime(mins + 60), course_name: '', location: '' })
+                          setEditingBlock({ day_of_week: dayIdx, start_time: minutesToTime(mins), end_time: minutesToTime(mins + 60), course_name: '', location: '', attendance_required: true })
                         }} />
                     </div>
                   )
@@ -743,12 +850,11 @@ export const Calendar = () => {
             </div>
           </div>
 
-          {/* ── RIGHT PANEL ── */}
           <div className="w-[280px] flex-shrink-0 flex flex-col border-l border-white/8 bg-[#161616]">
             <div className="px-4 py-3 border-b border-white/8 flex items-center justify-between flex-shrink-0">
               <div>
-                <h2 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Sesiones</h2>
-                <p className="text-xs text-white/60 mt-0.5">{sessions.length} programadas</p>
+                <h2 className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Sesiones Globales</h2>
+                <p className="text-xs text-white/60 mt-0.5">{sessions.length} programadas en total</p>
               </div>
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </div>
@@ -767,25 +873,24 @@ export const Calendar = () => {
 
               {sessions.map(session => {
                 const taskTitle = session._title ?? session.tasks?.title ?? 'Sesión de estudio'
-                const courseName = session._course_name ?? session.tasks?.title
                 const start = session.start_time ? new Date(session.start_time) : null
                 const end = session.end_time ? new Date(session.end_time) : null
                 const dur = start && end ? fmtDuration(session.start_time, session.end_time) : null
-                const color = colorForCourse(taskTitle)
+                const colors = priorityColor(session.priority)
 
-                // Selected tasks for this session
                 const selectedTaskTitles = (session._selected_task_ids ?? [])
                   .map(id => tasks.find(t => t.id === id)?.title)
                   .filter(Boolean)
 
                 return (
                   <div key={session.id}
-                    className="rounded-xl border border-white/8 bg-white/[0.03] hover:border-white/15 transition-all group p-3">
+                    className={`rounded-xl border ${colors.border}/30 bg-white/[0.03] hover:${colors.border}/60 transition-all group p-3`}>
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${color.dot}`} />
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${colors.dot}`} />
                         <p className="text-xs font-bold text-white truncate">{taskTitle}</p>
                       </div>
+
                       <button onClick={() => setEditingSession(session)}
                         className="opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-pink-400 flex-shrink-0">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -795,7 +900,6 @@ export const Calendar = () => {
                       </button>
                     </div>
 
-                    {/* Selected tasks chips */}
                     {selectedTaskTitles.length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-2 pl-4">
                         {selectedTaskTitles.map((t, i) => (
@@ -808,7 +912,7 @@ export const Calendar = () => {
                       <div className="flex flex-col">
                         {start && (
                           <span className="text-[10px] text-white/30 font-mono">
-                            {start.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric' })} · {start.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
+                            {start.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short' })} · {start.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         )}
                       </div>
@@ -841,7 +945,6 @@ export const Calendar = () => {
         </div>
       </main>
 
-      {/* Modals */}
       {editingBlock !== null && (
         <BlockModal
           block={editingBlock}

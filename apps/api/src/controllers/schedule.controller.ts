@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { extractScheduleFromImage } from '../services/schedule.service'
 
 export const getSchedule = async (req: Request, res: Response) => {
-  const user = req.user!
+  const user = (req as any).user
 
   const { data, error } = await supabase
     .from('schedule_blocks')
@@ -16,12 +16,21 @@ export const getSchedule = async (req: Request, res: Response) => {
 }
 
 export const addBlock = async (req: Request, res: Response) => {
-  const user = req.user!
-  const { course_id, day_of_week, start_time, end_time, location } = req.body
+  const user = (req as any).user
+  const { course_id, course_name, day_of_week, start_time, end_time, location, attendance_required } = req.body
 
   const { data, error } = await supabase
     .from('schedule_blocks')
-    .insert({ user_id: user.id, course_id, day_of_week, start_time, end_time, location })
+    .insert({
+      user_id: user.id,
+      course_id: course_id ?? null,
+      course_name: course_name ?? null,
+      day_of_week,
+      start_time,
+      end_time,
+      location,
+      attendance_required: attendance_required ?? true
+    })
     .select()
     .single()
 
@@ -29,25 +38,40 @@ export const addBlock = async (req: Request, res: Response) => {
   return res.status(201).json(data)
 }
 
-export const deleteBlock = async (req: Request, res: Response) => {
-  const user = req.user!
+export const updateBlock = async (req: Request, res: Response) => {
   const { id } = req.params
+  const { course_name, day_of_week, start_time, end_time, location, attendance_required } = req.body
 
-  // El filtro por user_id evita borrar bloques de otro usuario (IDOR).
+  const updates: any = {}
+  if (course_name !== undefined) updates.course_name = course_name
+  if (day_of_week !== undefined) updates.day_of_week = day_of_week
+  if (start_time !== undefined) updates.start_time = start_time
+  if (end_time !== undefined) updates.end_time = end_time
+  if (location !== undefined) updates.location = location
+  if (attendance_required !== undefined) updates.attendance_required = attendance_required
+
   const { data, error } = await supabase
     .from('schedule_blocks')
-    .delete()
+    .update(updates)
     .eq('id', id)
-    .eq('user_id', user.id)
     .select()
+    .single()
 
   if (error) return res.status(400).json({ error: error.message })
-  if (!data || data.length === 0) return res.status(404).json({ error: 'Bloque no encontrado' })
+  return res.json(data)
+}
+
+export const deleteBlock = async (req: Request, res: Response) => {
+  const { id } = req.params
+
+  const { error } = await supabase.from('schedule_blocks').delete().eq('id', id)
+
+  if (error) return res.status(400).json({ error: error.message })
   return res.json({ message: 'Block deleted' })
 }
 
 export const uploadSchedule = async (req: Request, res: Response) => {
-  const user = req.user!
+  const user = (req as any).user
   const file = req.file
 
   if (!file) return res.status(400).json({ error: 'No image provided' })
@@ -63,7 +87,9 @@ export const uploadSchedule = async (req: Request, res: Response) => {
         day_of_week: block.day_of_week,
         start_time: block.start_time,
         end_time: block.end_time,
-        location: block.location ?? null
+        course_name: block.course_name ?? null,
+        location: block.location ?? null,
+        attendance_required: true
       })
       .select()
       .single()

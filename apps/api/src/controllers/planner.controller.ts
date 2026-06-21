@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { generateFreeSlots, assignStudyBlocks } from '../services/planner.service'
 
 export const generatePlan = async (req: Request, res: Response) => {
-  const user = req.user!
+  const user = (req as any).user
 
   const { data: scheduleBlocks } = await supabase
     .from('schedule_blocks')
@@ -56,7 +56,7 @@ export const generatePlan = async (req: Request, res: Response) => {
 }
 
 export const getStudyBlocks = async (req: Request, res: Response) => {
-  const user = req.user!
+  const user = (req as any).user
 
   const { data, error } = await supabase
     .from('study_blocks')
@@ -66,4 +66,59 @@ export const getStudyBlocks = async (req: Request, res: Response) => {
 
   if (error) return res.status(400).json({ error: error.message })
   return res.json(data)
+}
+
+export const createStudyBlock = async (req: Request, res: Response) => {
+  const user = (req as any).user
+  const { start_time, end_time, priority, task_id, title, course_name } = req.body
+
+  const { data, error } = await supabase
+    .from('study_blocks')
+    .insert({
+      user_id: user.id,
+      task_id: task_id ?? null,
+      start_time,
+      end_time,
+      priority: priority ?? 'medium',
+      title: title ?? null,
+      course_name: course_name ?? null,
+      auto_generated: false
+    })
+    .select()
+    .single()
+
+  if (error) return res.status(400).json({ error: error.message })
+  return res.status(201).json(data)
+}
+
+export const updateStudyBlock = async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { start_time, end_time, priority, task_id, title, course_name } = req.body
+
+  const updates: any = {}
+  if (start_time !== undefined) updates.start_time = start_time
+  if (end_time !== undefined) updates.end_time = end_time
+  if (priority !== undefined) updates.priority = priority
+  if (task_id !== undefined) updates.task_id = task_id
+  if (title !== undefined) updates.title = title
+  if (course_name !== undefined) updates.course_name = course_name
+
+  const { data, error } = await supabase
+    .from('study_blocks')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) return res.status(400).json({ error: error.message })
+  return res.json(data)
+}
+
+export const deleteStudyBlock = async (req: Request, res: Response) => {
+  const { id } = req.params
+
+  const { error } = await supabase.from('study_blocks').delete().eq('id', id)
+
+  if (error) return res.status(400).json({ error: error.message })
+  return res.json({ message: 'Study block deleted' })
 }

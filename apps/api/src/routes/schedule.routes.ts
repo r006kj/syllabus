@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { addBlock, getSchedule, deleteBlock, uploadSchedule } from '../controllers/schedule.controller'
+import { addBlock, getSchedule, updateBlock, deleteBlock, uploadSchedule } from '../controllers/schedule.controller'
 import { authMiddleware } from '../middlewares/auth.middleware'
 import multer from 'multer'
 
@@ -8,6 +8,7 @@ const router = Router()
 
 router.get('/', authMiddleware, getSchedule)
 router.post('/blocks', authMiddleware, addBlock)
+router.patch('/blocks/:id', authMiddleware, updateBlock)
 router.delete('/blocks/:id', authMiddleware, deleteBlock)
 router.post('/upload', authMiddleware, upload.single('image'), uploadSchedule)
 
