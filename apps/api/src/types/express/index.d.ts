@@ -1,11 +1,5 @@
-import type { User } from '@supabase/supabase-js'
-
-declare global {
-  namespace Express {
-    interface Request {
-      user?: User
-    }
+declare namespace Express {
+  interface Request {
+    user?: import('@supabase/supabase-js').User
   }
 }
-
-export {}

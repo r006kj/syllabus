@@ -72,9 +72,18 @@ const itemIcon = (type: string) => {
 
 // --- Componente: Tarjeta de Módulo con seguridad en la petición ---
 const ModuleCard = ({ mod }: { mod: Module }) => {
+  const [selectedItems, setSelectedItems] = useState<number[]>([])
   const [open, setOpen] = useState(false)
   const [summarizing, setSummarizing] = useState(false)
   const [summary, setSummary] = useState<string | null>(null)
+
+  const toggleItem = (itemId: number) => {
+  setSelectedItems((prev) =>
+    prev.includes(itemId)
+      ? prev.filter((id) => id !== itemId)
+      : [...prev, itemId]
+  )
+}
 
   const handleSummarize = async (e: React.MouseEvent) => {
     e.stopPropagation() // Evita que se cierre el acordeón
@@ -118,24 +127,37 @@ const ModuleCard = ({ mod }: { mod: Module }) => {
             <p className="text-xs text-warmgray-400 dark:text-warmgray-500">Sin archivos en este módulo.</p>
           ) : (
             mod.items.map((item) => (
-              <div key={item.id} className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[16px] text-pink-400 dark:text-pink-300">
-                  {itemIcon(item.type)}
-                </span>
-                {item.html_url ? (
-                  <a
-                    href={item.html_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-warmgray-700 dark:text-warmgray-300 hover:text-pink-600 dark:hover:text-pink-300 truncate transition-colors"
-                  >
-                    {item.title}
-                  </a>
-                ) : (
-                  <span className="text-xs text-warmgray-700 dark:text-warmgray-300 truncate">{item.title}</span>
-                )}
-              </div>
-            ))
+  <div
+    key={item.id}
+    className="flex items-center gap-2"
+  >
+    <input
+      type="checkbox"
+      checked={selectedItems.includes(item.id)}
+      onChange={() => toggleItem(item.id)}
+      className="h-4 w-4 accent-pink-500"
+    />
+
+    <span className="material-symbols-outlined text-[16px] text-pink-400">
+      {itemIcon(item.type)}
+    </span>
+
+    {item.html_url ? (
+      <a
+        href={item.html_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs truncate"
+      >
+        {item.title}
+      </a>
+    ) : (
+      <span className="text-xs truncate">
+        {item.title}
+      </span>
+    )}
+  </div>
+))
           )}
 
           <div className="mt-3 pt-3 border-t border-warmgray-50 dark:border-warmgray-700/50">
@@ -180,7 +202,7 @@ export const CourseDetail = () => {
   const { id } = useParams<{ id: string }>()
   
   const { tasks, loading: tasksLoading } = useCourseDetail(id!)
-  const { modules, loading: modulesLoading } = useCourseModules(id!)
+  const { modules} = useCourseModules(id!)
   const { data: settings } = useSettingsData() // <-- Carga de configuraciones
 
   const pending = tasks.filter((t: Task) => t.status !== 'entregado')
