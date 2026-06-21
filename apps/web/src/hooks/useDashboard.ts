@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { api } from '../lib/api'
 
 type UpcomingTask = {
@@ -12,6 +12,7 @@ type OverloadedWeek = {
   week_start: string
   week_end: string
   count: number
+  tasks: { title: string; due_date: string }[]
 }
 
 type GradeOverview = {
@@ -21,34 +22,33 @@ type GradeOverview = {
 }
 
 export const useDashboard = () => {
-  const [upcomingTasks, setUpcomingTasks] = useState<UpcomingTask[]>([])
-  const [overloadedWeeks, setOverloadedWeeks] = useState<OverloadedWeek[]>([])
-  const [grades, setGrades] = useState<GradeOverview[]>([])
-  const [loading, setLoading] = useState(true)
+  const [upcomingTasks,  setUpcomingTasks]  = useState<UpcomingTask[]>([])
+  const [overloadedWeeks,setOverloadedWeeks]= useState<OverloadedWeek[]>([])
+  const [grades,         setGrades]         = useState<GradeOverview[]>([])
+  const [allTasks,       setAllTasks]       = useState<any[]>([])
+  const [loading,        setLoading]        = useState(true)
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const [tasksRes, overloadRes, gradesRes] = await Promise.all([
-          api.get('/tasks/upcoming'),
-          api.get('/tasks/overloaded-weeks'),
-          api.get('/grades/overview')
-        ])
-console.log('UPCOMING:', tasksRes.data)
-console.log('OVERLOADED:', overloadRes.data)
-console.log('GRADES:', gradesRes.data)
-        setUpcomingTasks(tasksRes.data)
-        setOverloadedWeeks(overloadRes.data)
-        setGrades(gradesRes.data)
-      } catch (err) {
-        console.error('Error cargando dashboard:', err)
-      } finally {
-        setLoading(false)
-      }
+  const fetchAll = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [tasksRes, overloadRes, gradesRes, allTasksRes] = await Promise.all([
+        api.get('/tasks/upcoming'),
+        api.get('/tasks/overloaded-weeks'),
+        api.get('/grades/overview'),
+        api.get('/tasks'),
+      ])
+      setUpcomingTasks(tasksRes.data)
+      setOverloadedWeeks(overloadRes.data)
+      setGrades(gradesRes.data)
+      setAllTasks(allTasksRes.data)
+    } catch (err) {
+      console.error('Error cargando dashboard:', err)
+    } finally {
+      setLoading(false)
     }
-
-    fetchAll()
   }, [])
 
-  return { upcomingTasks, overloadedWeeks, grades, loading }
+  useEffect(() => { fetchAll() }, [fetchAll])
+
+  return { upcomingTasks, overloadedWeeks, grades, allTasks, loading, refetch: fetchAll }
 }

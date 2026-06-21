@@ -52,3 +52,31 @@ export const getGradesOverview = async (req: Request, res: Response) => {
 
   return res.json(overview)
 }
+
+export const addTaskGrade = async (req: Request, res: Response) => {
+  const user = req.user!
+  const { task_id, score, max_score } = req.body
+
+  // Verificar que la tarea pertenece al usuario
+  const { data: task } = await supabase
+    .from('tasks')
+    .select('id, courses!inner(user_id)')
+    .eq('id', task_id)
+    .eq('courses.user_id', user.id)
+    .maybeSingle()
+
+  if (!task) return res.status(404).json({ error: 'Tarea no encontrada' })
+
+  const { data, error } = await supabase
+    .from('grades')
+    .upsert({ task_id, score, max_score }, { onConflict: 'task_id' })
+    .select()
+    .single()
+
+  if (error) return res.status(400).json({ error: error.message })
+
+  // Marcar tarea como entregada si no lo estaba
+  await supabase.from('tasks').update({ status: 'entregado' }).eq('id', task_id)
+
+  return res.json(data)
+}
