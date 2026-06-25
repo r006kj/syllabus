@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Sidebar } from '../components/Sidebar'
+import { useSidebar } from '../context/SidebarContext'
 import { useCourseDetail } from '../hooks/useCourseDetail'
 import { useCourseModules } from '../hooks/useCourseModules'
 import { useSettingsData } from '../hooks/useSettingsData' // <-- Nuevo import
@@ -199,6 +200,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 // --- Página Principal ---
 export const CourseDetail = () => {
+  const { collapsed } = useSidebar()
   const { id } = useParams<{ id: string }>()
   
   const { tasks, loading: tasksLoading } = useCourseDetail(id!)
@@ -216,7 +218,7 @@ export const CourseDetail = () => {
     <div className="flex min-h-screen bg-warmgray-50 dark:bg-warmgray-900">
       <Sidebar />
 
-      <main className="flex-1 md:ml-64 p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full">
+      <main className={`flex-1 ${collapsed ? 'md:ml-16' : 'md:ml-64'} p-6 flex flex-col gap-6 max-w-7xl mx-auto w-full`}>
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

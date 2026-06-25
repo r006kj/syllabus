@@ -1,16 +1,23 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+const readProfile = () => {
+  const stored = localStorage.getItem('user')
+  if (!stored) return null
+  const user = JSON.parse(stored)
+  return {
+    name:  user.user_metadata?.name ?? user.email?.split('@')[0],
+    email: user.email,
+  }
+}
 
 export const useProfile = () => {
-  const [profile] = useState(() => {
-    const stored = localStorage.getItem('user')
-    if (!stored) return null
+  const [profile, setProfile] = useState(readProfile)
 
-    const user = JSON.parse(stored)
-    return {
-      name: user.user_metadata?.name ?? user.email?.split('@')[0],
-      email: user.email
-    }
-  })
+  useEffect(() => {
+    const handler = () => setProfile(readProfile())
+    window.addEventListener('profile-updated', handler)
+    return () => window.removeEventListener('profile-updated', handler)
+  }, [])
 
   return profile
 }

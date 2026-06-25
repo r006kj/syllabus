@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Sidebar } from '../components/Sidebar'
+import { useSidebar } from '../context/SidebarContext'
 import { useTasksList } from '../hooks/useTasksList'
 
 const statusFilters = [
@@ -10,6 +11,7 @@ const statusFilters = [
 ]
 
 export const Tasks = () => {
+  const { collapsed } = useSidebar()
   const { tasks, loading, updateTask } = useTasksList()
   const [filter, setFilter] = useState('all')
 
@@ -18,7 +20,7 @@ export const Tasks = () => {
   return (
     <div className="flex min-h-screen bg-warmgray-50 dark:bg-warmgray-900">
       <Sidebar />
-      <main className="flex-1 md:ml-64 p-6">
+      <main className={`flex-1 ${collapsed ? 'md:ml-16' : 'md:ml-64'} p-6`}>
         <h1 className="text-2xl font-headline font-bold text-warmgray-900 dark:text-white mb-4">Tareas</h1>
 
         <div className="flex gap-2 mb-6">

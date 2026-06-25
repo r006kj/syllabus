@@ -20,6 +20,8 @@ import integrationsRoutes from './routes/integrations.routes'
 import { startGoogleCalendarJob } from './jobs/googleCalendar.job'
 import profileRoutes from './routes/profile.routes'
 import summaryRoutes from './routes/summary.routes'
+import supportRoutes from './services/support.routes'
+import verificationRoutes from './routes/verification.routes'
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware'
 
 startGoogleCalendarJob()
@@ -66,6 +68,9 @@ app.use('/auth', authRoutes)
 app.use('/canvas', canvasRoutes)
 app.use('/courses', coursesRoutes)
 app.use('/tasks', tasksRoutes)
+
+app.use('/support', supportRoutes)
+app.use('/verification', verificationRoutes)
 
 // 404 + manejador global de errores (deben ir al final).
 app.use(notFoundHandler)
