@@ -40,21 +40,32 @@ const loginWithGoogle = async () => {
   })
   if (error) setError(error.message)
 }
-  const register = async (email: string, password: string, name: string) => {
-  setLoading(true)
-  setError(null)
+  const register = async (email: string, password: string, name: string, username?: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      // Create account on backend (admin bypass — no email rate limit)
+      await axios.post(`${API_URL}/auth/register`, { email, password, name, username })
 
-  try {
-    const { data } = await axios.post(`${API_URL}/auth/register`, { email, password, name })
-    return data
-  } catch (err) {
-    const message = axios.isAxiosError(err) ? err.response?.data?.error : 'Error al registrarse'
-    setError(message ?? 'Error al registrarse')
-    throw err
-  } finally {
-    setLoading(false)
+      // Sign in directly via the Supabase client so the session is stored
+      // natively (same path as normal login — persists across tabs reliably).
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInError) throw signInError
+
+      if (data.session) {
+        localStorage.setItem('access_token', data.session.access_token)
+        localStorage.setItem('user', JSON.stringify(data.user))
+      }
+
+      return data
+    } catch (err) {
+      const message = axios.isAxiosError(err) ? err.response?.data?.error : 'Error al registrarse'
+      setError(message ?? 'Error al registrarse')
+      throw err
+    } finally {
+      setLoading(false)
+    }
   }
-}
   const logout = async () => {
     await supabase.auth.signOut()
     localStorage.removeItem('access_token')

@@ -22,6 +22,7 @@ import profileRoutes from './routes/profile.routes'
 import summaryRoutes from './routes/summary.routes'
 import supportRoutes from './services/support.routes'
 import verificationRoutes from './routes/verification.routes'
+import attendanceRoutes from './routes/attendance.routes'
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware'
 
 startGoogleCalendarJob()
@@ -71,6 +72,7 @@ app.use('/tasks', tasksRoutes)
 
 app.use('/support', supportRoutes)
 app.use('/verification', verificationRoutes)
+app.use('/attendance', attendanceRoutes)
 
 // 404 + manejador global de errores (deben ir al final).
 app.use(notFoundHandler)

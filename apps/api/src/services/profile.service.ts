@@ -16,5 +16,13 @@ export const getCanvasCredentials = async (
 
   if (!data?.canvas_token || !data?.canvas_domain) return null
 
-  return { domain: data.canvas_domain, token: decrypt(data.canvas_token) }
+  let token: string
+  try {
+    token = decrypt(data.canvas_token)
+  } catch {
+    // Token stored as plaintext (connected before encryption was introduced)
+    token = data.canvas_token
+  }
+
+  return { domain: data.canvas_domain, token }
 }

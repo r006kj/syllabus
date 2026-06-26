@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Sidebar } from '../components/Sidebar'
 import { api } from '../lib/api'
 import { useSettingsData } from '../hooks/useSettingsData'
 import { useSidebar } from '../context/SidebarContext'
+import { TutorialBanner } from '../components/TutorialBanner'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -527,6 +529,9 @@ const GeneratePlanModal = ({ tasks, prefs, scheduleBlocks, semesterStart, genera
 export const Calendar = () => {
   const { collapsed } = useSidebar()
   const { data: settings }   = useSettingsData()
+  const location = useLocation()
+  const navState = location.state as { highlightWeek?: string; openPlan?: boolean } | null
+
   const [scheduleBlocks, setScheduleBlocks] = useState<ScheduleBlock[]>([])
   const [sessions,       setSessions]       = useState<StudySession[]>([])
   const [tasks,          setTasks]          = useState<Task[]>([])
@@ -534,12 +539,27 @@ export const Calendar = () => {
   const [generating,     setGenerating]     = useState(false)
   const [uploading,      setUploading]      = useState(false)
   const [extended,       setExtended]       = useState(false)
-  const [weekOffset,     setWeekOffset]     = useState(0)
+  const [weekOffset,     setWeekOffset]     = useState(() => {
+    if (navState?.highlightWeek) {
+      const target = new Date(navState.highlightWeek)
+      const today  = new Date()
+      const dow    = today.getDay()
+      const thisMonday = new Date(today)
+      thisMonday.setDate(today.getDate() - ((dow + 6) % 7))
+      thisMonday.setHours(0,0,0,0)
+      const targetDow = target.getDay()
+      const targetMonday = new Date(target)
+      targetMonday.setDate(target.getDate() - ((targetDow + 6) % 7))
+      targetMonday.setHours(0,0,0,0)
+      return Math.round((targetMonday.getTime() - thisMonday.getTime()) / (7 * 86400000))
+    }
+    return 0
+  })
 
   const [editingBlock,   setEditingBlock]   = useState<Partial<ScheduleBlock> | null>(null)
   const [editingSession, setEditingSession] = useState<Partial<StudySession> | null>(null)
   const [showPrefs,      setShowPrefs]      = useState(false)
-  const [showGenModal,   setShowGenModal]   = useState(false)
+  const [showGenModal,   setShowGenModal]   = useState(!!navState?.openPlan)
   const [prefs,          setPrefs]          = useState<StudyPrefs>(loadPrefs)
 
   // Drag-to-move state
@@ -561,16 +581,25 @@ export const Calendar = () => {
     : yearStart === yearEnd ? `${monthStart} - ${monthEnd} ${yearStart}` : `${monthStart} ${yearStart} - ${monthEnd} ${yearEnd}`
 
   let weekNumberLabel: number = weekOffset + 1
+  let semesterMonday: Date | null = null
   if (settings?.semester_start) {
     const semStart    = new Date(settings.semester_start)
     const startDow    = semStart.getDay()
-    const startMonday = new Date(semStart)
-    startMonday.setDate(semStart.getDate() - ((startDow + 6) % 7))
-    startMonday.setHours(0,0,0,0)
+    semesterMonday    = new Date(semStart)
+    semesterMonday.setDate(semStart.getDate() - ((startDow + 6) % 7))
+    semesterMonday.setHours(0,0,0,0)
     const viewedMonday = new Date(weekDates[0])
     viewedMonday.setHours(0,0,0,0)
-    weekNumberLabel = Math.floor((viewedMonday.getTime() - startMonday.getTime()) / (1000*60*60*24*7)) + 1
+    weekNumberLabel = Math.floor((viewedMonday.getTime() - semesterMonday.getTime()) / (1000*60*60*24*7)) + 1
   }
+
+  const canGoPrev = !semesterMonday || weekNumberLabel > 1
+  const canGoNext = !semesterMonday || weekNumberLabel < 16
+
+  const midtermWeek  = (settings as any)?.midterm_week  as number | undefined
+  const finalWeek    = (settings as any)?.final_week    as number | undefined
+  const isFinalWeek   = finalWeek   && weekNumberLabel === finalWeek
+  const isMidtermWeek = midtermWeek && weekNumberLabel === midtermWeek && !isFinalWeek
 
   const today    = new Date()
   const todayDow = (today.getDay() + 6) % 7
@@ -798,21 +827,36 @@ export const Calendar = () => {
     <div className="flex min-h-screen bg-[#111111] font-body">
       <Sidebar />
 
-      <main className={`flex-1 ${collapsed ? 'md:ml-16' : 'md:ml-64'} flex flex-col h-screen overflow-hidden`}>
+      <main className={`flex-1 ${collapsed ? 'md:ml-16' : 'md:ml-60'} flex flex-col h-screen overflow-hidden`}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-white/8 flex-shrink-0 bg-[#111111]">
+        <div className={`flex items-center justify-between px-5 py-3 border-b flex-shrink-0 ${
+          isFinalWeek   ? 'bg-red-950/60 border-red-800/40'   :
+          isMidtermWeek ? 'bg-amber-950/60 border-amber-800/40' :
+          'bg-[#111111] border-white/8'
+        }`}>
           <div className="flex items-center gap-3">
-            <button onClick={() => setWeekOffset(w => w - 1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors">
+            <button
+              onClick={() => { if (canGoPrev) setWeekOffset(w => w - 1) }}
+              disabled={!canGoPrev}
+              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors disabled:opacity-25 disabled:cursor-not-allowed">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
             </button>
             <div className="flex flex-col items-center min-w-[120px]">
-              <h1 className="text-sm font-bold text-white capitalize">{monthLabel}</h1>
+              <h1 className={`text-sm font-bold capitalize ${isFinalWeek ? 'text-red-300' : isMidtermWeek ? 'text-amber-300' : 'text-white'}`}>
+                {monthLabel}
+                {isFinalWeek   && <span className="ml-2 text-[9px] font-black uppercase tracking-widest text-red-400">· Finales</span>}
+                {isMidtermWeek && <span className="ml-2 text-[9px] font-black uppercase tracking-widest text-amber-400">· Parciales</span>}
+              </h1>
               <span className="text-[10px] text-white/50 font-medium uppercase tracking-widest">
                 Semana {weekNumberLabel}{settings?.semester_start ? '' : ' (Relativa)'}
+                {!canGoNext && <span className="ml-1 text-white/25">· fin</span>}
               </span>
             </div>
-            <button onClick={() => setWeekOffset(w => w + 1)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors">
+            <button
+              onClick={() => { if (canGoNext) setWeekOffset(w => w + 1) }}
+              disabled={!canGoNext}
+              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/50 hover:text-white transition-colors disabled:opacity-25 disabled:cursor-not-allowed">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
             </button>
             <button onClick={() => setShowPrefs(true)} className="ml-2 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/10 text-white/30 hover:text-white/70 transition-colors" title="Preferencias de estudio">
@@ -839,6 +883,26 @@ export const Calendar = () => {
               {generating ? 'Generando...' : 'Generar plan'}
             </button>
           </div>
+        </div>
+
+        {/* Double-click hint */}
+        <div className="flex items-center justify-center gap-1.5 py-1.5 border-b border-white/5 bg-white/[0.015] flex-shrink-0">
+          <span className="material-symbols-outlined text-[13px] text-white/20">touch_app</span>
+          <span className="text-[10px] text-white/25 font-medium">Doble clic en el horario para añadir un bloque de clase</span>
+        </div>
+
+        {/* First-visit tutorial */}
+        <div className="px-4 pt-3 flex-shrink-0">
+          <TutorialBanner
+            section="calendar"
+            title="Planner semanal"
+            tips={[
+              { icon: 'touch_app',    text: 'Doble clic en cualquier celda para agregar un bloque de clase o sesión de estudio.' },
+              { icon: 'bolt',         text: 'Usa "Generar plan" para que la IA cree un horario de estudio basado en tus tareas y preferencias.' },
+              { icon: 'upload_file',  text: 'Puedes subir una foto o PDF de tu horario y lo detectamos automáticamente.' },
+              { icon: 'drag_pan',     text: 'Arrastra cualquier bloque para moverlo a otra hora o día.' },
+            ]}
+          />
         </div>
 
         <div className="flex flex-1 overflow-hidden">
@@ -892,6 +956,17 @@ export const Calendar = () => {
                       onDragOver={e => onColumnDragOver(e, dayIdx)}
                       onDragLeave={() => setDropPreview(null)}
                       onDrop={e => onColumnDrop(e, dayIdx)}
+                      onDoubleClick={e => {
+                        const rect   = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                        const y      = e.clientY - rect.top
+                        const rawMin = Math.round(((y / HOUR_HEIGHT) * 60 + startHour * 60) / 15) * 15
+                        const h      = Math.floor(rawMin / 60).toString().padStart(2,'0')
+                        const m      = (rawMin % 60).toString().padStart(2,'0')
+                        const endMin = Math.min(rawMin + 60, endHour * 60)
+                        const eh     = Math.floor(endMin / 60).toString().padStart(2,'0')
+                        const em     = (endMin % 60).toString().padStart(2,'0')
+                        setEditingBlock({ day_of_week: dayIdx, start_time: `${h}:${m}`, end_time: `${eh}:${em}` })
+                      }}
                     >
                       {/* Hour grid lines */}
                       {hours.map(h => (

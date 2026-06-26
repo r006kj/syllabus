@@ -27,7 +27,11 @@ export const googleCalendarCallback = async (req: Request, res: Response) => {
     google_refresh_token: tokens.refresh_token
   }).eq('id', userId)
 
-  return res.send('Google Calendar conectado, puedes cerrar esta ventana.')
+  // Sync existing tasks immediately so the user sees events right away
+  syncTasksToGoogleCalendar(userId).catch(e => console.error('[gcal] sync after connect:', e))
+
+  const frontendUrl = (process.env.CORS_ORIGIN ?? 'http://localhost:5173').split(',')[0].trim()
+  return res.redirect(`${frontendUrl}/settings?google=connected`)
 }
 
 export const syncToGoogleCalendar = async (req: Request, res: Response) => {

@@ -4,13 +4,25 @@ import { supabase } from '../lib/supabase'
 export const getProfile = async (req: Request, res: Response) => {
   const user = (req as any).user
 
-  const { data, error } = await supabase
+  // Try with extra columns; fall back to base columns if they don't exist yet in DB
+  let data: any = null
+  const { data: fullData, error: fullError } = await supabase
     .from('profiles')
-    .select('canvas_domain, canvas_token, google_refresh_token, notify_hours_before, notifications_enabled, semester_start')
+    .select('canvas_domain, canvas_token, google_refresh_token, notify_hours_before, notifications_enabled, semester_start, midterm_week, final_week')
     .eq('id', user.id)
     .single()
 
-  if (error) return res.status(400).json({ error: error.message })
+  if (fullError) {
+    const { data: baseData, error: baseError } = await supabase
+      .from('profiles')
+      .select('canvas_domain, canvas_token, google_refresh_token, notify_hours_before, notifications_enabled, semester_start')
+      .eq('id', user.id)
+      .single()
+    if (baseError) return res.status(400).json({ error: baseError.message })
+    data = baseData
+  } else {
+    data = fullData
+  }
 
   return res.json({
     canvas_connected: !!data.canvas_domain,
@@ -18,7 +30,9 @@ export const getProfile = async (req: Request, res: Response) => {
     google_connected: !!data.google_refresh_token,
     notify_hours_before: data.notify_hours_before ?? 24,
     notifications_enabled: data.notifications_enabled ?? true,
-    semester_start: data.semester_start
+    semester_start: data.semester_start ?? null,
+    midterm_week: data.midterm_week ?? null,
+    final_week: data.final_week ?? null,
   })
 }
 
@@ -26,12 +40,20 @@ export const updateSemesterStart = async (req: Request, res: Response) => {
   const user = (req as any).user
   const { semester_start, midterm_week, final_week } = req.body
 
+  // Try saving all three fields; fall back to just semester_start if columns don't exist
   const { error } = await supabase
     .from('profiles')
     .update({ semester_start, midterm_week: midterm_week ?? null, final_week: final_week ?? null })
     .eq('id', user.id)
 
-  if (error) return res.status(400).json({ error: error.message })
+  if (error) {
+    const { error: e2 } = await supabase
+      .from('profiles')
+      .update({ semester_start })
+      .eq('id', user.id)
+    if (e2) return res.status(400).json({ error: e2.message })
+  }
+
   return res.json({ message: 'Fecha de inicio actualizada' })
 }
 

@@ -1,3 +1,13 @@
+const EXCLUDE_PATTERNS = [
+  /sandbox/i,
+  /test\s*course/i,
+  /^test$/i,
+  /^prueba$/i,
+  /^demo$/i,
+  /sample/i,
+]
+
 export const isRealCourse = (name: string) => {
-  return /\([A-Za-z]{2,4}\d{3,4}\)/.test(name)
+  if (!name || name.trim().length < 3) return false
+  return !EXCLUDE_PATTERNS.some(p => p.test(name))
 }

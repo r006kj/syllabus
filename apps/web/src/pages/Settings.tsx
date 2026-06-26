@@ -7,7 +7,7 @@ import { useProfile } from '../hooks/useProfile'
 import { useSettingsData } from '../hooks/useSettingsData'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../lib/api'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -163,6 +163,7 @@ export const Settings = () => {
   const { data: settings, loading, refresh } = useSettingsData()
   const { logout }   = useAuth()
   const navigate     = useNavigate()
+  const [searchParams] = useSearchParams()
 
   // ── Toast ──────────────────────────────────────────────────────────────────
   const [toast, setToast] = useState<{ msg: string; type: 'ok'|'err' } | null>(null)
@@ -183,6 +184,8 @@ export const Settings = () => {
   const [canvasDomain,      setCanvasDomain]      = useState('')
   const [canvasToken,       setCanvasToken]       = useState('')
   const [connectingCanvas,  setConnectingCanvas]  = useState(false)
+  const [syncingCanvas,     setSyncingCanvas]     = useState(false)
+  const [disconnectingCanvas, setDisconnectingCanvas] = useState(false)
 
   // ── Notifications ──────────────────────────────────────────────────────────
   const [notifEnabled,  setNotifEnabled]  = useState(true)
@@ -229,6 +232,16 @@ export const Settings = () => {
 
   useEffect(() => { if (profile?.name) setDisplayName(profile.name) }, [profile])
 
+  // Detect redirect back from Google OAuth
+  useEffect(() => {
+    if (searchParams.get('google') === 'connected') {
+      setActive('integrations')
+      refresh()
+      showOk('Google Calendar conectado — tus tareas ya están sincronizadas')
+      navigate('/settings', { replace: true })
+    }
+  }, [searchParams, navigate, refresh])
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -263,22 +276,35 @@ export const Settings = () => {
   const handleConnectCanvas = async () => {
     setConnectingCanvas(true)
     try {
-      await api.post('/canvas/connect', { canvas_token: canvasToken, canvas_domain: canvasDomain })
+      const domain = canvasDomain.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase()
+      await api.post('/canvas/connect', { canvas_token: canvasToken, canvas_domain: domain })
       await api.post('/canvas/sync')
       await refresh()
       setCanvasToken('')
+      setCanvasDomain('')
       showOk('Canvas conectado y sincronizado')
     } catch { showErr('No se pudo conectar Canvas') }
     finally { setConnectingCanvas(false) }
   }
 
-  const handleSyncCanvas   = async () => {
-    try { await api.post('/canvas/sync'); showOk('Canvas sincronizado') }
-    catch { showErr('Error al sincronizar') }
+  const handleSyncCanvas = async () => {
+    setSyncingCanvas(true)
+    try {
+      const { data } = await api.post('/canvas/sync')
+      await refresh()
+      showOk(`Sincronización completa — ${data.courses ?? 0} cursos, ${data.tasks ?? 0} tareas`)
+    } catch { showErr('Error al sincronizar Canvas') }
+    finally { setSyncingCanvas(false) }
   }
+
   const handleDisconnectCanvas = async () => {
-    try { await api.delete('/canvas/disconnect'); await refresh(); showOk('Canvas desconectado') }
-    catch { showErr('Error al desconectar') }
+    setDisconnectingCanvas(true)
+    try {
+      await api.delete('/canvas/disconnect')
+      await refresh()
+      showOk('Canvas desconectado')
+    } catch { showErr('Error al desconectar Canvas') }
+    finally { setDisconnectingCanvas(false) }
   }
 
   const handleConnectGoogle = async () => {
@@ -371,7 +397,7 @@ export const Settings = () => {
     <div className="flex min-h-screen bg-warmgray-50 dark:bg-warmgray-950">
       <Sidebar />
 
-      <main className={`flex-1 ${collapsed ? 'md:ml-16' : 'md:ml-64'} flex gap-0`}>
+      <main className={`flex-1 ${collapsed ? 'md:ml-16' : 'md:ml-60'} flex gap-0`}>
 
         {/* Left nav */}
         <aside className="w-60 flex-shrink-0 border-r border-warmgray-100 dark:border-warmgray-800 bg-white dark:bg-warmgray-900 min-h-screen sticky top-0 p-5">
@@ -653,23 +679,35 @@ export const Settings = () => {
 
               {settings.canvas_connected ? (
                 <>
-                  <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/50 rounded-xl px-4 py-3 mb-4">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-emerald-500 flex-shrink-0"><polyline points="20 6 9 17 4 12"/></svg>
-                    <div>
+                  <div className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/50 rounded-xl px-4 py-3 mb-4">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-emerald-500 flex-shrink-0 mt-0.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-emerald-700 dark:text-emerald-300">Conectado</p>
-                      <p className="text-xs text-emerald-600 dark:text-emerald-400">{settings.canvas_domain}</p>
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 break-all">{settings.canvas_domain}</p>
+                      <p className="text-[10px] text-warmgray-400 mt-1">¿Dominio incorrecto? Desconecta y vuelve a conectar con el dominio correcto.</p>
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={handleSyncCanvas} className={btn}>Sincronizar ahora</button>
-                    <button onClick={handleDisconnectCanvas} className={btnGhost}>Desconectar</button>
+                    <button onClick={handleSyncCanvas} disabled={syncingCanvas || disconnectingCanvas} className={btn}>
+                      {syncingCanvas ? 'Sincronizando...' : 'Sincronizar ahora'}
+                    </button>
+                    <button onClick={handleDisconnectCanvas} disabled={syncingCanvas || disconnectingCanvas} className={btnGhost}>
+                      {disconnectingCanvas ? 'Desconectando...' : 'Desconectar'}
+                    </button>
                   </div>
                 </>
               ) : (
                 <div className="flex flex-col gap-3">
                   <div>
                     <label className="text-xs text-warmgray-500 mb-1.5 block">Dominio institucional</label>
-                    <input className={input} placeholder="utec.instructure.com" value={canvasDomain} onChange={e => setCanvasDomain(e.target.value)} />
+                    <input
+                      className={input}
+                      placeholder="utec.instructure.com"
+                      value={canvasDomain}
+                      onChange={e => setCanvasDomain(e.target.value)}
+                      onBlur={e => setCanvasDomain(e.target.value.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase())}
+                    />
+                    <p className="text-[10px] text-warmgray-400 mt-1">Solo el dominio, sin https:// · ej: <span className="font-mono">utec.instructure.com</span></p>
                   </div>
                   <div>
                     <label className="text-xs text-warmgray-500 mb-1.5 block">Access Token</label>

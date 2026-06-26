@@ -7,19 +7,25 @@ import { syncTasksToGoogleCalendar } from '../services/googleCalendarSync.servic
 import { getCanvasCredentials } from '../services/profile.service'
 import { encrypt } from '../utils/crypto'
 import { requireFields } from '../utils/validate'
+import { getCurrentTerm, isCurrentTermCourse } from '../utils/getCurrentTerm'
+
+const normalizeDomain = (raw: string): string =>
+  raw.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '').toLowerCase()
 
 export const connect = async (req: Request, res: Response) => {
   const { canvas_token, canvas_domain } = req.body
   const user = req.user!
   requireFields(req.body, ['canvas_token', 'canvas_domain'])
 
+  const domain = normalizeDomain(canvas_domain)
+
   const { error } = await supabase
     .from('profiles')
     // El token se guarda cifrado en reposo (AES-256-GCM).
-    .upsert({ id: user.id, canvas_token: encrypt(canvas_token), canvas_domain, email: user.email })
+    .upsert({ id: user.id, canvas_token: encrypt(canvas_token), canvas_domain: domain, email: user.email })
 
   if (error) return res.status(400).json({ error: error.message })
-  return res.json({ message: 'Canvas connected' })
+  return res.json({ message: 'Canvas connected', domain })
 }
 
 export const sync = async (req: Request, res: Response) => {
@@ -30,22 +36,73 @@ export const sync = async (req: Request, res: Response) => {
 
   const { domain: canvas_domain, token: canvas_token } = credentials
   const courses = await fetchCourses(canvas_domain, canvas_token)
-  const realCourses = courses.filter((c: any) => isRealCourse(c.name))
+  const currentTerm = getCurrentTerm()
+
+  // Auto-detect institution style: if any course name/term contains YYYY-NN (USIL),
+  // filter by current term. If not (UTEC-style codes like MAT101), keep all real courses.
+  const TERM_CODE_RE = /\b\d{4}-\d{2}\b/
+  const hasTermCodes = courses.some((c: any) =>
+    TERM_CODE_RE.test(c.name ?? '') || TERM_CODE_RE.test(c.term?.name ?? '')
+  )
+
+  const realCourses = courses.filter((c: any) => {
+    if (!isRealCourse(c.name)) return false
+    if (hasTermCodes) return isCurrentTermCourse(c)
+    return true
+  })
+
+  console.log(`[canvas sync] ${courses.length} total → ${realCourses.length} reales${hasTermCodes ? ` (término ${currentTerm})` : ' (sin filtro de término)'}`)
 
   let coursesSynced = 0
   let tasksSynced = 0
 
+  // Repair: ensure every group_key already in DB has exactly one primary
+  const { data: allExisting } = await supabase
+    .from('courses')
+    .select('id, group_key, is_primary, created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: true })
+
+  if (allExisting) {
+    const groupsSeen = new Map<string, string>() // group_key → first id
+    for (const c of allExisting) {
+      const gk = c.group_key ?? c.id
+      if (!groupsSeen.has(gk)) groupsSeen.set(gk, c.id)
+    }
+    // For each group, if no primary exists, set the oldest course as primary
+    for (const [gk, firstId] of groupsSeen) {
+      const hasPrimary = allExisting.some(c => (c.group_key ?? c.id) === gk && c.is_primary)
+      if (!hasPrimary) {
+        await supabase.from('courses').update({ is_primary: true }).eq('id', firstId)
+      }
+    }
+  }
+
   for (const course of realCourses) {
     const groupKey = normalizeCourseName(course.name)
 
-    const { data: existingGroup } = await supabase
+    // Check if this specific course already exists — preserve its is_primary if so
+    const { data: existingCourse } = await supabase
       .from('courses')
-      .select('id')
+      .select('id, is_primary')
       .eq('user_id', user.id)
-      .eq('group_key', groupKey)
-      .limit(1)
+      .eq('canvas_course_id', course.id.toString())
+      .maybeSingle()
 
-    const isPrimary = !existingGroup || existingGroup.length === 0
+    let isPrimary: boolean
+    if (existingCourse) {
+      isPrimary = existingCourse.is_primary ?? false
+    } else {
+      // New course: primary only if no other course in the group exists yet
+      const { data: existingPrimary } = await supabase
+        .from('courses')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('group_key', groupKey)
+        .eq('is_primary', true)
+        .limit(1)
+      isPrimary = !existingPrimary || existingPrimary.length === 0
+    }
 
     const { data: savedCourse, error: courseError } = await supabase
       .from('courses')

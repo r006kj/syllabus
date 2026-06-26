@@ -11,7 +11,11 @@ import { Calendar } from './pages/Calendar'
 import { Tasks } from './pages/Tasks'
 import { Courses } from './pages/Courses'
 import { CourseDetail } from './pages/CourseDetail'
+import { Attendance } from './pages/Attendance'
+import { Installation } from './pages/Installation'
+import { Onboarding } from './pages/Onboarding'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { AttendancePopup } from './components/AttendancePopup'
 
 function App() {
   return (
@@ -23,7 +27,9 @@ function App() {
               {/* Rutas públicas */}
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/install" element={<Installation />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
 
               {/* Rutas protegidas: requieren sesión */}
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -32,9 +38,13 @@ function App() {
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/courses" element={<ProtectedRoute><Courses /></ProtectedRoute>} />
               <Route path="/courses/:id" element={<ProtectedRoute><CourseDetail /></ProtectedRoute>} />
+              <Route path="/attendance" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
 
               <Route path="/" element={<Navigate to="/login" replace />} />
             </Routes>
+
+            {/* Global attendance popup — shown after class time if not yet recorded */}
+            <AttendancePopup />
           </BrowserRouter>
         </SidebarProvider>
       </LanguageProvider>

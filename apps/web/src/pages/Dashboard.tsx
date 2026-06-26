@@ -7,6 +7,7 @@ import { useLanguage } from '../hooks/useLanguage'
 import { translations } from '../i18n/translations'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
+import { TutorialBanner } from '../components/TutorialBanner'
 
 type Language = keyof typeof translations
 
@@ -259,6 +260,7 @@ const EditWidget = ({ id, isOver, isDragging, onRemove, onDragStart, onDragOver,
 export const Dashboard = () => {
   const { collapsed } = useSidebar()
   const { upcomingTasks, overloadedWeeks, grades, allTasks, loading, refetch } = useDashboard()
+
   const { scheduleBlocks } = useSchedule()
   const { language } = useLanguage()
   const navigate = useNavigate()
@@ -341,14 +343,50 @@ const visibleTabsKey = visibleTabs.join(',')
   const [openMenuId,  setOpenMenuId]  = useState<string | null>(null)
   const [selWeek,     setSelWeek]     = useState(0)
 
+  // ── Resize state for top-row split ────────────────────────────────────────
+  const [leftPct, setLeftPct] = useState<number>(() => {
+    const stored = localStorage.getItem('dash_left_pct')
+    return stored ? Number(stored) : 40
+  })
+  const leftPctRef   = useRef<number>(leftPct)
+  const topRowRef    = useRef<HTMLDivElement>(null)
+  const isResizing   = useRef(false)
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isResizing.current = true
+
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizing.current || !topRowRef.current) return
+      const rect = topRowRef.current.getBoundingClientRect()
+      const raw  = ((ev.clientX - rect.left) / rect.width) * 100
+      const clamped = Math.round(Math.min(Math.max(raw, 20), 80) * 10) / 10
+      leftPctRef.current = clamped
+      setLeftPct(clamped)
+    }
+
+    const onUp = () => {
+      isResizing.current = false
+      localStorage.setItem('dash_left_pct', String(leftPctRef.current))
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [])
+
   const handleTaskSave = useCallback(async (id: string, updates: any) => {
     await api.patch(`/tasks/${id}`, updates)
     refetch()
   }, [refetch])
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-warmgray-50 dark:bg-warmgray-900">
-      <p className="text-warmgray-500">Cargando...</p>
+    <div className="min-h-screen flex items-center justify-center bg-warmgray-50 dark:bg-warmgray-950 font-body">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-warmgray-200 dark:border-warmgray-700 border-t-pink-500 rounded-full animate-spin" />
+        <p className="text-sm text-warmgray-400">Cargando...</p>
+      </div>
     </div>
   )
 
@@ -410,6 +448,36 @@ const visibleTabsKey = visibleTabs.join(',')
   )
 
   const SCHED_DAYS = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie']
+
+  // Strip "- Laboratorio", "- Lab", "- Teoría", "- Teo", etc. to get the base name
+  const baseCourseName = (name: string) =>
+    name.replace(/\s*[-–]\s*(Laboratorio|Laboratorios|Lab|Teoría|Teoria|Teo|Teor|L|T)\b.*/i, '').trim()
+
+  // Merge blocks that share the same base name + dow: keep all time slots, deduplicated by start
+  type MergedBlock = { baseName: string; slots: string[]; ids: string[]; isLab: boolean; isTheory: boolean }
+  const mergeBlocksByDay = (dow: number): MergedBlock[] => {
+    const raw = (scheduleBlocks as any[])
+      .filter(b => b.day_of_week === dow)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time))
+    const map = new Map<string, MergedBlock>()
+    for (const b of raw) {
+      const base = baseCourseName(b.course_name ?? '')
+      const rawName: string = b.course_name ?? ''
+      const isLab    = /lab(oratorio)?/i.test(rawName)
+      const isTheory = /te[oó](r(ía|ia))?/i.test(rawName)
+      if (!map.has(base)) {
+        map.set(base, { baseName: base || rawName, slots: [], ids: [], isLab, isTheory })
+      }
+      const entry = map.get(base)!
+      const slot = b.start_time?.slice(0,5)
+      if (slot && !entry.slots.includes(slot)) entry.slots.push(slot)
+      if (b.id) entry.ids.push(b.id)
+      if (isLab)    entry.isLab    = true
+      if (isTheory) entry.isTheory = true
+    }
+    return Array.from(map.values())
+  }
+
   const scheduleWidget = (
     <div className="bg-white dark:bg-warmgray-800 rounded-2xl p-4 border border-warmgray-100 dark:border-warmgray-700 h-full flex flex-col">
       <h2 className="text-sm font-bold text-warmgray-700 dark:text-warmgray-200 mb-3">Horario semanal</h2>
@@ -424,9 +492,7 @@ const visibleTabsKey = visibleTabs.join(',')
       ) : (
         <div className="flex gap-1.5 flex-1">
           {[1,2,3,4,5].map(dow => {
-            const blocks = scheduleBlocks
-              .filter((b: any) => b.day_of_week === dow)
-              .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time))
+            const merged  = mergeBlocksByDay(dow)
             const isToday = todayDow === dow
             return (
               <div key={dow} className="flex-1 min-w-0 flex flex-col">
@@ -436,15 +502,24 @@ const visibleTabsKey = visibleTabs.join(',')
                   {SCHED_DAYS[dow]}
                 </div>
                 <div className="flex flex-col gap-1">
-                  {blocks.map((b: any, i: number) => (
-                    <div key={b.id ?? i} className={`rounded-lg p-1 ${isToday ? 'bg-pink-100 dark:bg-pink-900/30' : 'bg-warmgray-50 dark:bg-warmgray-700/60'}`}>
+                  {merged.map((m, i) => (
+                    <div key={m.ids[0] ?? i} className={`rounded-lg p-1 ${isToday ? 'bg-pink-100 dark:bg-pink-900/30' : 'bg-warmgray-50 dark:bg-warmgray-700/60'}`}>
                       <p className={`text-[9px] font-bold leading-tight truncate ${isToday ? 'text-pink-600 dark:text-pink-300' : 'text-warmgray-700 dark:text-warmgray-200'}`}>
-                        {b.course_name ?? '—'}
+                        {m.baseName}
                       </p>
-                      <p className="text-[8px] text-warmgray-400 leading-tight">{b.start_time?.slice(0,5)}</p>
+                      <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                        {m.slots.map(s => (
+                          <span key={s} className="text-[8px] text-warmgray-400 leading-tight">{s}</span>
+                        ))}
+                        {(m.isLab || m.isTheory) && (
+                          <span className="text-[7px] font-bold text-pink-400/80 leading-tight">
+                            {m.isLab && m.isTheory ? 'T+L' : m.isLab ? 'Lab' : 'Teo'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
-                  {blocks.length === 0 && <div className="h-6" />}
+                  {merged.length === 0 && <div className="h-6" />}
                 </div>
               </div>
             )
@@ -669,43 +744,52 @@ const visibleTabsKey = visibleTabs.join(',')
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {grades.map(g => {
-          const avgReal = g.average
+          const avgReal      = g.average
           const circumference = 251.2
-          // Normal: show avgReal. Acumulado ON: empty (bridge pending)
-          const showGrade = !showAccum && avgReal
-          const offset = showGrade ? circumference - (circumference * (avgReal / 20)) : circumference
+          const hasGrade     = avgReal && avgReal > 0
+          // Circle always shows actual grade; bar only appears in accumulated mode
+          const circleOffset = (!showAccum && hasGrade)
+            ? circumference - (circumference * (avgReal / 20))
+            : circumference
           const gradeColor = (avgReal ?? 0) >= 14 ? 'emerald' : (avgReal ?? 0) >= 11 ? 'amber' : 'red'
+          const strokeClass = (!showAccum && hasGrade)
+            ? gradeColor === 'emerald' ? 'stroke-emerald-500' : gradeColor === 'amber' ? 'stroke-amber-500' : 'stroke-red-400'
+            : 'stroke-warmgray-200 dark:stroke-warmgray-700'
+
           return (
             <div key={g.course} className="bg-warmgray-50 dark:bg-warmgray-700 rounded-2xl p-4 flex items-center justify-between">
               <div className="flex flex-col gap-1 flex-1 min-w-0">
                 <h3 className="text-sm font-headline font-bold text-warmgray-900 dark:text-white leading-tight truncate">{g.course}</h3>
                 <span className="text-xs text-warmgray-500 dark:text-warmgray-400">{g.graded_tasks} {t.gradedTasks}</span>
-                <div className="mt-1 flex items-center gap-2">
-                  <div className="flex-1 bg-warmgray-200 dark:bg-warmgray-600 rounded-full h-1.5">
-                    <div className={`h-1.5 rounded-full transition-all duration-700 ${showGrade
-                      ? gradeColor === 'emerald' ? 'bg-emerald-500' : gradeColor === 'amber' ? 'bg-amber-500' : 'bg-red-400'
-                      : 'bg-warmgray-300 dark:bg-warmgray-500'}`}
-                      style={{ width: showGrade ? `${Math.min((avgReal / 20) * 100, 100)}%` : '0%' }} />
+
+                {/* Bar — only shown in accumulated mode */}
+                {showAccum && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="flex-1 bg-warmgray-200 dark:bg-warmgray-600 rounded-full h-1.5">
+                      <div className="h-1.5 rounded-full bg-warmgray-300 dark:bg-warmgray-500 transition-all duration-700" style={{ width: '0%' }} />
+                    </div>
+                    <span className="text-xs font-bold text-warmgray-400">—</span>
                   </div>
-                  <span className={`text-xs font-bold flex-shrink-0 ${showGrade
-                    ? gradeColor === 'emerald' ? 'text-emerald-600 dark:text-emerald-400' : gradeColor === 'amber' ? 'text-amber-600 dark:text-amber-400' : 'text-red-500'
-                    : 'text-warmgray-400'}`}>
-                    {showGrade ? `${avgReal}/20` : showAccum ? '—' : '0/0'}
-                  </span>
-                </div>
+                )}
               </div>
+
+              {/* Circle — always shows actual grade */}
               <div className="relative w-14 h-14 flex items-center justify-center flex-shrink-0 ml-3">
                 <svg className="w-full h-full" viewBox="0 0 100 100">
                   <circle cx="50" cy="50" fill="transparent" r="40" strokeWidth="8" className="stroke-warmgray-200 dark:stroke-warmgray-600" />
                   <circle cx="50" cy="50" fill="transparent" r="40"
-                    strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" strokeWidth="8"
-                    className={`transition-all duration-700 ${showGrade
-                      ? gradeColor === 'emerald' ? 'stroke-emerald-500' : gradeColor === 'amber' ? 'stroke-amber-500' : 'stroke-red-400'
-                      : 'stroke-warmgray-300 dark:stroke-warmgray-600'}`}
+                    strokeDasharray={circumference} strokeDashoffset={circleOffset} strokeLinecap="round" strokeWidth="8"
+                    className={`transition-all duration-700 ${strokeClass}`}
                     style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }} />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xs font-bold text-warmgray-900 dark:text-white">{showGrade ? avgReal : '—'}</span>
+                  <span className={`text-xs font-bold ${hasGrade && !showAccum
+                    ? gradeColor === 'emerald' ? 'text-emerald-600 dark:text-emerald-400'
+                    : gradeColor === 'amber' ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-red-500'
+                    : 'text-warmgray-400 dark:text-warmgray-500'}`}>
+                    {!showAccum && hasGrade ? avgReal : '—'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -751,7 +835,7 @@ const visibleTabsKey = visibleTabs.join(',')
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex min-h-screen bg-warmgray-50 dark:bg-warmgray-900 font-body">
+    <div className="flex min-h-screen bg-warmgray-50 dark:bg-warmgray-950 font-body">
       <style>{`
         @keyframes ios-wiggle {
           0%   { transform: rotate(-0.5deg); }
@@ -766,14 +850,14 @@ const visibleTabsKey = visibleTabs.join(',')
 
       <Sidebar />
 
-      <main className={`flex-1 ${collapsed ? 'md:ml-16' : 'md:ml-64'} p-5 flex flex-col gap-5`}>
+      <main className={`flex-1 ${collapsed ? 'md:ml-16' : 'md:ml-60'} p-5 md:p-8 flex flex-col gap-5`}>
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-xs font-bold text-pink-600 dark:text-pink-300 uppercase tracking-widest">{t.todaySummary}</span>
-            <h1 className="text-3xl font-headline font-extrabold text-warmgray-900 dark:text-white mt-0.5">
-              {t.today} {today} <span className="text-warmgray-400 text-xl">{monthLabel}</span>
+            <span className="text-xs font-bold text-pink-500 uppercase tracking-widest">{t.todaySummary}</span>
+            <h1 className="text-2xl font-headline font-bold text-warmgray-900 dark:text-white mt-0.5">
+              {t.today} {today} <span className="text-warmgray-400 font-normal text-lg">{monthLabel}</span>
             </h1>
           </div>
           {isEditing ? (
@@ -799,13 +883,22 @@ const visibleTabsKey = visibleTabs.join(',')
           </p>
         )}
 
+        <TutorialBanner
+          section="dashboard"
+          title="Bienvenido al Dashboard"
+          tips={[
+            { icon: 'drag_pan',       text: 'Presiona "Editar" para reorganizar, ocultar o cambiar el tamaño de los widgets.' },
+            { icon: 'priority_high',  text: 'La pestaña "Sobrecarga" te muestra semanas con muchas entregas. Usa el botón "Planear" para generar un plan de estudio.' },
+            { icon: 'school',         text: 'El widget de Cursos muestra tu promedio real en el círculo. Activa "Acumulado" para ver la proyección.' },
+          ]}
+        />
+
         {/* ── Top row: left widget + panel ── */}
         {(leftWidget || rightWidget) && (
-          <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 items-stretch">
-
-            {/* Left column */}
-            {leftWidget && (
-              isEditing ? (
+          isEditing ? (
+            /* Edit mode: keep grid layout for drag-swap */
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 items-stretch">
+              {leftWidget && (
                 <EditWidget
                   key={leftWidget}
                   id={leftWidget}
@@ -817,16 +910,8 @@ const visibleTabsKey = visibleTabs.join(',')
                 >
                   {widgetContents[leftWidget]}
                 </EditWidget>
-              ) : (
-                <div key={leftWidget} className={rightWidget ? 'xl:col-span-2' : 'xl:col-span-5'}>
-                  {widgetContents[leftWidget]}
-                </div>
-              )
-            )}
-
-            {/* Right column */}
-            {rightWidget && (
-              isEditing ? (
+              )}
+              {rightWidget && (
                 <EditWidget
                   key={rightWidget}
                   id={rightWidget}
@@ -838,13 +923,34 @@ const visibleTabsKey = visibleTabs.join(',')
                 >
                   {widgetContents[rightWidget]}
                 </EditWidget>
-              ) : (
-                <div key={rightWidget} className={leftWidget ? 'xl:col-span-3' : 'xl:col-span-5'}>
-                  {widgetContents[rightWidget]}
-                </div>
-              )
-            )}
-          </div>
+              )}
+            </div>
+          ) : leftWidget && rightWidget ? (
+            /* Normal mode with two widgets: flex + drag-resize handle */
+            <div ref={topRowRef} className="flex items-stretch select-none">
+              <div key={leftWidget} className="min-w-0 flex-none" style={{ width: `${leftPct}%` }}>
+                {widgetContents[leftWidget]}
+              </div>
+
+              {/* Resize handle */}
+              <div
+                className="w-5 flex-none flex items-center justify-center cursor-col-resize group"
+                onMouseDown={startResize}
+              >
+                <div className="w-0.5 h-10 rounded-full bg-warmgray-200 dark:bg-warmgray-700 group-hover:bg-pink-400 dark:group-hover:bg-pink-500 transition-colors" />
+              </div>
+
+              <div key={rightWidget} className="flex-1 min-w-0">
+                {widgetContents[rightWidget]}
+              </div>
+            </div>
+          ) : (
+            /* Normal mode with a single widget */
+            <div>
+              {leftWidget  && <div key={leftWidget}>{widgetContents[leftWidget]}</div>}
+              {rightWidget && <div key={rightWidget}>{widgetContents[rightWidget]}</div>}
+            </div>
+          )
         )}
 
         {/* ── Courses ── */}

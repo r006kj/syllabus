@@ -29,23 +29,37 @@ export const getGradesOverview = async (req: Request, res: Response) => {
 
   const { data, error } = await supabase
     .from('courses')
-    .select('id, name, tasks(title, grades(score, max_score))')
+    .select('id, name, group_key, tasks(title, grades(score, max_score))')
     .eq('user_id', user.id)
+    .order('created_at', { ascending: true })
 
   if (error) return res.status(400).json({ error: error.message })
 
-  const overview = data.map((course: any) => {
-    const grades = course.tasks
-      .flatMap((t: any) => t.grades)
+  // Group by group_key; aggregate grades from all sections
+  const groups = new Map<string, { name: string; grades: { score: number; max_score: number }[] }>()
+
+  for (const course of data as any[]) {
+    const gk: string = course.group_key ?? course.id
+    const courseGrades = (course.tasks as any[])
+      .flatMap((t: any) => t.grades as any[])
       .filter((g: any) => g?.score != null && g?.max_score)
 
+    if (!groups.has(gk)) {
+      // Strip trailing section number " - N" for display
+      const displayName: string = (course.name as string).replace(/\s*-\s*\d+$/, '').trim()
+      groups.set(gk, { name: displayName, grades: [] })
+    }
+    groups.get(gk)!.grades.push(...courseGrades)
+  }
+
+  const overview = Array.from(groups.values()).map(({ name, grades }) => {
     const averagePercentage = grades.length
-      ? grades.reduce((sum: number, g: any) => sum + (g.score / g.max_score) * 100, 0) / grades.length
+      ? grades.reduce((sum, g) => sum + (g.score / g.max_score) * 100, 0) / grades.length
       : null
 
     return {
-      course: course.name,
-      average: averagePercentage ? Math.round((averagePercentage / 100) * 20 * 10) / 10 : null,
+      course: name,
+      average: averagePercentage != null ? Math.round((averagePercentage / 100) * 20 * 10) / 10 : null,
       graded_tasks: grades.length
     }
   })
